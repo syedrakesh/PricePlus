@@ -21,8 +21,7 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.workers.discovery_tasks",
-        # future: "app.workers.monitoring_tasks",
-        # future: "app.workers.notification_tasks",
+        "app.workers.monitoring_tasks",
     ],
 )
 
@@ -48,6 +47,12 @@ celery_app.conf.update(
     task_default_retry_delay=60,
     task_max_retries=3,
 
-    # Beat schedule (monitoring will be added in Phase 5)
-    beat_schedule={},
+    # Beat schedule — monitoring runs every DEFAULT_POLL_INTERVAL_MINUTES
+    beat_schedule={
+        "monitoring.run_monitoring_cycle": {
+            "task": "monitoring.run_monitoring_cycle",
+            "schedule": settings.default_poll_interval_minutes * 60,  # seconds
+            "options": {"expires": settings.default_poll_interval_minutes * 60},
+        },
+    },
 )

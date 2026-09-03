@@ -34,7 +34,7 @@ from app.modules.stores.models import CompetitorStore  # noqa: F401
 from app.modules.billing.models import Plan, Subscription  # noqa: F401
 from app.modules.discovery.models import DiscoveredProduct, DiscoveryRun  # noqa: F401
 from app.modules.tracking.models import TrackedProduct  # noqa: F401
-# from app.modules.monitoring.models import ProductSnapshot, PriceChange  # noqa: F401
+from app.modules.monitoring.models import ProductSnapshot, PriceChange  # noqa: F401
 # from app.modules.alerts.models import Alert  # noqa: F401
 
 # ── Alembic config object ─────────────────────────────────────────────────────
