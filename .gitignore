@@ -1,0 +1,77 @@
+# ─── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+.installed.cfg
+
+# ─── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/
+
+# ─── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ─── Type checking ─────────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ─── Ruff ──────────────────────────────────────────────────────────────────────
+.ruff_cache/
+
+# ─── Alembic ───────────────────────────────────────────────────────────────────
+# Keep alembic.ini and versions/ tracked — only ignore generated pyc
+backend/alembic/__pycache__/
+
+# ─── Environment / Secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+*.secret
+
+# ─── Node.js / Next.js ─────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.cache/
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Stripe ────────────────────────────────────────────────────────────────────
+# Never commit webhook secrets
+stripe_webhook_secret.txt
