@@ -1,28 +1,31 @@
 # ─── PricePlus — Development Makefile ──────────────────────────────────────────
 # Usage: make <target>
-# All backend commands run inside backend/.venv
+# All tool paths use $(CURDIR) so they are absolute regardless of `cd`.
 
-SHELL := /bin/bash
+SHELL   := /bin/bash
 .DEFAULT_GOAL := help
 
-BACKEND_DIR := backend
-VENV        := $(BACKEND_DIR)/.venv
-PYTHON      := $(VENV)/bin/python
-PIP         := $(VENV)/bin/pip
-UVICORN     := $(VENV)/bin/uvicorn
-ALEMBIC     := $(VENV)/bin/alembic
-PYTEST      := $(VENV)/bin/pytest
-RUFF        := $(VENV)/bin/ruff
-MYPY        := $(VENV)/bin/mypy
+# Absolute project root — anchors all tool paths so cd doesn't break them
+ROOT := $(CURDIR)
 
-FRONTEND_DIR := frontend
+BACKEND_DIR  := $(ROOT)/backend
+FRONTEND_DIR := $(ROOT)/frontend
+
+VENV    := $(BACKEND_DIR)/.venv
+PYTHON  := $(VENV)/bin/python
+PIP     := $(VENV)/bin/pip
+UVICORN := $(VENV)/bin/uvicorn
+ALEMBIC := $(VENV)/bin/alembic
+PYTEST  := $(VENV)/bin/pytest
+RUFF    := $(VENV)/bin/ruff
+MYPY    := $(VENV)/bin/mypy
 
 .PHONY: help install install-backend install-frontend \
         dev dev-backend dev-frontend \
         test test-unit test-integration test-cov \
         lint lint-fix type-check \
-        migrate migrate-create migrate-downgrade \
-        db-start db-stop redis-start redis-stop \
+        migrate migrate-create migrate-downgrade migrate-history migrate-current \
+        db-start db-stop redis-start redis-stop redis-start-direct \
         setup-db clean
 
 # ─── Help ───────────────────────────────────────────────────────────────────────
@@ -30,22 +33,21 @@ help:
 	@echo ""
 	@echo "PricePlus — Development Commands"
 	@echo "────────────────────────────────────────────────────"
-	@echo "  make install          Install all dependencies"
-	@echo "  make dev              Start backend dev server"
-	@echo "  make test             Run all tests"
-	@echo "  make test-cov         Run tests with coverage report"
-	@echo "  make lint             Run ruff linter"
-	@echo "  make lint-fix         Run ruff with auto-fix"
-	@echo "  make type-check       Run mypy static analysis"
-	@echo "  make migrate          Run pending migrations"
-	@echo "  make migrate-create m='description'  Create new migration"
-	@echo "  make migrate-downgrade  Downgrade one migration"
-	@echo "  make db-start         Start PostgreSQL"
-	@echo "  make db-stop          Stop PostgreSQL"
-	@echo "  make redis-start      Start Redis"
-	@echo "  make redis-stop       Stop Redis"
-	@echo "  make setup-db         Create DB users and databases"
-	@echo "  make clean            Remove caches and build artifacts"
+	@echo "  make install                     Install all dependencies"
+	@echo "  make dev                         Start backend dev server"
+	@echo "  make test                        Run all tests"
+	@echo "  make test-cov                    Run tests with coverage"
+	@echo "  make lint                        Run ruff linter"
+	@echo "  make lint-fix                    Run ruff with auto-fix"
+	@echo "  make type-check                  Run mypy"
+	@echo "  make migrate                     Run pending migrations"
+	@echo "  make migrate-create m='desc'     Create new migration"
+	@echo "  make migrate-downgrade           Downgrade one migration"
+	@echo "  make db-start                    Start PostgreSQL (systemd)"
+	@echo "  make redis-start                 Start Redis (systemd)"
+	@echo "  make redis-start-direct          Start Redis without systemd"
+	@echo "  make setup-db                    Create DB user + databases"
+	@echo "  make clean                       Remove caches"
 	@echo ""
 
 # ─── Install ────────────────────────────────────────────────────────────────────
@@ -54,10 +56,11 @@ install: install-backend
 
 install-backend:
 	@echo "→ Creating Python virtualenv..."
-	@cd $(BACKEND_DIR) && python3 -m venv .venv
+	@python3 -m venv $(VENV)
 	@echo "→ Installing backend dependencies..."
-	@cd $(BACKEND_DIR) && $(PIP) install --upgrade pip --quiet
-	@cd $(BACKEND_DIR) && $(PIP) install -r requirements.txt -r requirements-dev.txt --quiet
+	@$(PIP) install --upgrade pip --quiet
+	@$(PIP) install -r $(BACKEND_DIR)/requirements.txt \
+	                -r $(BACKEND_DIR)/requirements-dev.txt --quiet
 	@echo "✓ Backend dependencies installed"
 
 install-frontend:
@@ -116,7 +119,10 @@ migrate:
 	@echo "✓ Migrations applied"
 
 migrate-create:
-	@if [ -z "$(m)" ]; then echo "Usage: make migrate-create m='your migration description'"; exit 1; fi
+	@if [ -z "$(m)" ]; then \
+		echo "Usage: make migrate-create m='your migration description'"; \
+		exit 1; \
+	fi
 	@echo "→ Creating migration: $(m)"
 	@cd $(BACKEND_DIR) && $(ALEMBIC) revision --autogenerate -m "$(m)"
 
@@ -142,31 +148,44 @@ db-stop:
 	@sudo systemctl stop postgresql
 
 redis-start:
-	@echo "→ Starting Redis..."
-	@sudo systemctl start redis-server || sudo systemctl start redis
-	@sleep 0.5
-	@redis-cli ping && echo "✓ Redis is running" || echo "✗ Redis failed to start"
+	@echo "→ Starting Redis (via systemd)..."
+	@sudo systemctl start redis 2>/dev/null \
+		|| sudo systemctl start redis-server 2>/dev/null \
+		|| (echo "systemd unit not found — use: make redis-start-direct" && exit 1)
+	@sleep 1
+	@$(PYTHON) -c "import redis; redis.Redis().ping(); print('✓ Redis running')" 2>/dev/null \
+		|| echo "✗ Redis ping failed"
+
+redis-start-direct:
+	@echo "→ Starting Redis directly (no systemd)..."
+	@redis-server --daemonize yes --logfile /tmp/redis-priceplus.log --port 6379
+	@sleep 1
+	@$(PYTHON) -c "import redis; redis.Redis().ping(); print('✓ Redis running on :6379')"
 
 redis-stop:
-	@echo "→ Stopping Redis..."
-	@sudo systemctl stop redis-server || sudo systemctl stop redis
+	@sudo systemctl stop redis 2>/dev/null \
+		|| sudo systemctl stop redis-server 2>/dev/null \
+		|| true
 
 # ─── Database Setup ─────────────────────────────────────────────────────────────
 setup-db:
-	@echo "→ Creating PostgreSQL user and databases..."
-	@sudo -u postgres psql -c "CREATE USER priceplus WITH PASSWORD 'priceplus';" 2>/dev/null || echo "  User 'priceplus' already exists"
-	@sudo -u postgres psql -c "CREATE DATABASE priceplus OWNER priceplus;" 2>/dev/null || echo "  Database 'priceplus' already exists"
-	@sudo -u postgres psql -c "CREATE DATABASE priceplus_test OWNER priceplus;" 2>/dev/null || echo "  Database 'priceplus_test' already exists"
+	@echo "→ Creating PostgreSQL user and databases on port 5434..."
+	@sudo -u postgres psql -p 5434 -c "CREATE USER priceplus WITH PASSWORD 'priceplus';" \
+		2>/dev/null || echo "  User 'priceplus' already exists"
+	@sudo -u postgres psql -p 5434 -c "CREATE DATABASE priceplus OWNER priceplus;" \
+		2>/dev/null || echo "  Database 'priceplus' already exists"
+	@sudo -u postgres psql -p 5434 -c "CREATE DATABASE priceplus_test OWNER priceplus;" \
+		2>/dev/null || echo "  Database 'priceplus_test' already exists"
 	@echo "✓ Databases ready"
 
 # ─── Cleanup ────────────────────────────────────────────────────────────────────
 clean:
 	@echo "→ Cleaning build artifacts..."
-	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
-	@find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null; true
-	@find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null; true
-	@find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null; true
-	@find . -type d -name htmlcov -exec rm -rf {} + 2>/dev/null; true
-	@find . -name "*.pyc" -delete 2>/dev/null; true
-	@find . -name ".coverage" -delete 2>/dev/null; true
+	@find $(ROOT) -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
+	@find $(ROOT) -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null; true
+	@find $(ROOT) -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null; true
+	@find $(ROOT) -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null; true
+	@find $(ROOT) -type d -name htmlcov -exec rm -rf {} + 2>/dev/null; true
+	@find $(ROOT) -name "*.pyc" -delete 2>/dev/null; true
+	@find $(ROOT) -name ".coverage" -delete 2>/dev/null; true
 	@echo "✓ Clean complete"

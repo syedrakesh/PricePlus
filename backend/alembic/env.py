@@ -1,32 +1,33 @@
 """
-Alembic environment configuration — async SQLAlchemy edition.
+Alembic environment configuration.
 
-Key design decisions:
-- Uses asyncpg driver via run_sync() pattern for async migrations
-- Reads DATABASE_URL from environment (not hard-coded in alembic.ini)
-- Imports all ORM models so autogenerate can detect schema changes
-- Uses the naming convention from Base.metadata for portable constraint names
+Design decisions:
+- Uses synchronous psycopg2 engine for migrations (simpler, no asyncio needed)
+- Reads DATABASE_URL from .env file automatically (no manual export required)
+- Imports all ORM models so autogenerate detects schema changes
+- Naming convention from Base.metadata ensures portable constraint names
 """
 
-import asyncio
 import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-# ── Make sure `app` is importable from backend/ directory ─────────────────────
-# Alembic is run from backend/, so app/ must be on sys.path
+# ── Make app importable (backend/ must be on sys.path) ────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# ── Import Base and ALL models ─────────────────────────────────────────────────
-# Every model module must be imported here so Alembic autogenerate
-# can detect schema changes. Add imports as new models are created.
+# ── Load .env from backend/ so DATABASE_URL is set without manual export ───────
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file, override=False)  # don't override already-exported vars
+
+# ── Import Base and ALL models (must happen after sys.path fix) ───────────────
+# Every model must be imported here for autogenerate to detect it.
 from app.core.db import Base  # noqa: E402
 from app.modules.auth.models import User  # noqa: F401
 # from app.modules.stores.models import CompetitorStore  # noqa: F401
@@ -36,7 +37,7 @@ from app.modules.auth.models import User  # noqa: F401
 # from app.modules.alerts.models import Alert  # noqa: F401
 # from app.modules.billing.models import Plan, Subscription  # noqa: F401
 
-# ── Alembic config ────────────────────────────────────────────────────────────
+# ── Alembic config object ─────────────────────────────────────────────────────
 config = context.config
 
 if config.config_file_name is not None:
@@ -44,38 +45,34 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# ── Read DB URL from environment (overrides alembic.ini placeholder) ──────────
-def get_url() -> str:
-    """
-    Read the database URL from the environment.
 
-    In development: reads from DATABASE_URL env var (set via .env).
-    In test: reads from DATABASE_TEST_URL if APP_ENV=test.
-    Never reads from the hard-coded alembic.ini placeholder.
+def get_sync_url() -> str:
+    """
+    Return the psycopg2 (sync) database URL for Alembic.
+
+    Alembic migrations run synchronously — they do not need asyncpg.
+    We convert the asyncpg URL to psycopg2 here.
     """
     app_env = os.environ.get("APP_ENV", "development")
     if app_env == "test":
-        url = os.environ.get("DATABASE_TEST_URL", "")
+        raw = os.environ.get("DATABASE_TEST_URL") or os.environ.get("DATABASE_URL", "")
     else:
-        url = os.environ.get("DATABASE_URL", "")
+        raw = os.environ.get("DATABASE_URL", "")
 
-    if not url:
+    if not raw:
         raise RuntimeError(
-            "DATABASE_URL environment variable is not set. "
-            "Copy .env.example to .env and configure it."
+            "DATABASE_URL is not set.\n"
+            "  → Make sure backend/.env exists (copy from .env.example)\n"
+            "  → Or export DATABASE_URL before running alembic"
         )
 
-    # Alembic needs the sync driver for migrations.
-    # Replace asyncpg with psycopg2 for migration execution.
-    return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    # Convert async URL to sync URL for psycopg2
+    return raw.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 
 def run_migrations_offline() -> None:
-    """
-    Run migrations in 'offline' mode (generates SQL scripts without DB connection).
-    Useful for reviewing changes before applying them.
-    """
-    url = get_url()
+    """Offline mode: emit SQL to stdout without a DB connection."""
+    url = get_sync_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -84,43 +81,30 @@ def run_migrations_offline() -> None:
         compare_type=True,
         compare_server_default=True,
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
 
-def do_run_migrations(connection: Connection) -> None:
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        compare_type=True,
-        compare_server_default=True,
-    )
-
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-async def run_async_migrations() -> None:
-    """Run migrations using an async engine (converted to sync for Alembic)."""
+def run_migrations_online() -> None:
+    """Online mode: connect to the DB and apply migrations synchronously."""
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = get_url()
+    configuration["sqlalchemy.url"] = get_sync_url()
 
-    connectable = async_engine_from_config(
+    connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
-
-    await connectable.dispose()
-
-
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode — connects to the real database."""
-    asyncio.run(run_async_migrations())
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():
