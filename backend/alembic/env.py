@@ -28,9 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Every model module must be imported here so Alembic autogenerate
 # can detect schema changes. Add imports as new models are created.
 from app.core.db import Base  # noqa: E402
-
-# Future model imports (uncomment as models are added):
-# from app.modules.auth.models import User  # noqa: F401
+from app.modules.auth.models import User  # noqa: F401
 # from app.modules.stores.models import CompetitorStore  # noqa: F401
 # from app.modules.discovery.models import DiscoveredProduct, DiscoveryRun  # noqa: F401
 # from app.modules.tracking.models import TrackedProduct  # noqa: F401
