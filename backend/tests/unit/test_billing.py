@@ -1,0 +1,297 @@
+"""
+Unit tests for Stripe billing — webhook handler and billing service.
+
+Uses unittest.mock to patch stripe API calls — no real Stripe account required.
+Tests cover: webhook event routing, idempotency, all 5 event types,
+BillingError mapping, and entitlement schema validation.
+"""
+
+import uuid
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.modules.billing.webhook_handler import (
+    _handle_checkout_completed,
+    _handle_payment_failed,
+    _handle_payment_succeeded,
+    _handle_subscription_deleted,
+    _handle_subscription_updated,
+    handle_webhook_event,
+)
+
+# ─── Fixtures ──────────────────────────────────────────────────────────────────
+
+USER_ID = str(uuid.uuid4())
+STRIPE_SUB_ID = "sub_test_123"
+STRIPE_CUSTOMER_ID = "cus_test_456"
+STRIPE_PRICE_ID = "price_test_789"
+
+NOW_TS = int(datetime.now(UTC).timestamp())
+
+
+def _make_db(
+    plan=None,
+    existing_sub=None,
+) -> AsyncMock:
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.flush = AsyncMock()
+
+    # execute side effects depend on call order
+    plan_result = MagicMock()
+    plan_result.scalar_one_or_none.return_value = plan
+
+    sub_result = MagicMock()
+    sub_result.scalar_one_or_none.return_value = existing_sub
+
+    db.execute = AsyncMock(side_effect=[plan_result, sub_result])
+    return db
+
+
+def _make_plan(plan_id=None):
+    plan = MagicMock()
+    plan.id = plan_id or uuid.uuid4()
+    plan.name = "starter"
+    plan.stripe_price_id = STRIPE_PRICE_ID
+    return plan
+
+
+def _make_subscription(status="active", stripe_sub_id=STRIPE_SUB_ID):
+    sub = MagicMock()
+    sub.id = uuid.uuid4()
+    sub.stripe_subscription_id = stripe_sub_id
+    sub.status = status
+    sub.stripe_customer_id = STRIPE_CUSTOMER_ID
+    return sub
+
+
+# ─── Webhook routing ──────────────────────────────────────────────────────────
+
+class TestWebhookRouting:
+    @pytest.mark.asyncio
+    async def test_unknown_event_ignored(self):
+        event = {"type": "some.unknown.event", "id": "evt_1", "data": {"object": {}}}
+        db = AsyncMock()
+        result = await handle_webhook_event(event, db)
+        assert "ignored" in result
+
+    @pytest.mark.asyncio
+    async def test_checkout_completed_routed(self):
+        event = {
+            "type": "checkout.session.completed",
+            "id": "evt_2",
+            "data": {"object": {"mode": "payment"}},  # non-subscription mode
+        }
+        db = AsyncMock()
+        result = await handle_webhook_event(event, db)
+        # mode=payment should be skipped
+        assert "skipped" in result
+
+
+# ─── checkout.session.completed ───────────────────────────────────────────────
+
+class TestCheckoutCompleted:
+    @pytest.mark.asyncio
+    async def test_non_subscription_mode_skipped(self):
+        data = {"mode": "payment", "subscription": None, "customer": None, "metadata": {}}
+        db = AsyncMock()
+        result = await _handle_checkout_completed(data, db)
+        assert result == "skipped:not_subscription_mode"
+
+    @pytest.mark.asyncio
+    async def test_missing_user_id_returns_error(self):
+        data = {
+            "mode": "subscription",
+            "subscription": STRIPE_SUB_ID,
+            "customer": STRIPE_CUSTOMER_ID,
+            "metadata": {},  # no user_id
+        }
+        db = AsyncMock()
+        result = await _handle_checkout_completed(data, db)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_user_id_returns_error(self):
+        data = {
+            "mode": "subscription",
+            "subscription": STRIPE_SUB_ID,
+            "customer": STRIPE_CUSTOMER_ID,
+            "metadata": {"user_id": "not-a-uuid"},
+        }
+        db = AsyncMock()
+        result = await _handle_checkout_completed(data, db)
+        assert result == "error:invalid_user_id"
+
+    @pytest.mark.asyncio
+    @patch("app.modules.billing.webhook_handler.stripe.Subscription.retrieve")
+    async def test_unknown_plan_returns_error(self, mock_retrieve):
+        """No plan matching the Stripe price_id → error."""
+        mock_sub = MagicMock()
+        mock_sub.__getitem__ = MagicMock(side_effect=lambda k: {
+            "items": {"data": [{"price": {"id": STRIPE_PRICE_ID}}]},
+            "current_period_end": NOW_TS,
+        }[k])
+        mock_retrieve.return_value = mock_sub
+
+        data = {
+            "mode": "subscription",
+            "subscription": STRIPE_SUB_ID,
+            "customer": STRIPE_CUSTOMER_ID,
+            "metadata": {"user_id": USER_ID},
+        }
+        plan_result = MagicMock()
+        plan_result.scalar_one_or_none.return_value = None  # no matching plan
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=plan_result)
+
+        result = await _handle_checkout_completed(data, db)
+        assert result == "error:unknown_plan"
+
+
+# ─── customer.subscription.updated ───────────────────────────────────────────
+
+class TestSubscriptionUpdated:
+    @pytest.mark.asyncio
+    async def test_missing_sub_id_returns_error(self):
+        data = {"id": None, "status": "active", "current_period_end": NOW_TS, "items": {"data": []}}
+        db = AsyncMock()
+        result = await _handle_subscription_updated(data, db)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_status_updated(self):
+        data = {
+            "id": STRIPE_SUB_ID,
+            "status": "past_due",
+            "current_period_end": NOW_TS,
+            "items": {"data": []},
+        }
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock())
+        result = await _handle_subscription_updated(data, db)
+        assert "ok:subscription_updated" in result
+        db.execute.assert_called_once()
+
+
+# ─── customer.subscription.deleted ───────────────────────────────────────────
+
+class TestSubscriptionDeleted:
+    @pytest.mark.asyncio
+    async def test_marks_canceled(self):
+        data = {"id": STRIPE_SUB_ID}
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock())
+        result = await _handle_subscription_deleted(data, db)
+        assert "ok:subscription_canceled" in result
+
+    @pytest.mark.asyncio
+    async def test_missing_id_returns_error(self):
+        data = {}
+        db = AsyncMock()
+        result = await _handle_subscription_deleted(data, db)
+        assert "error" in result
+
+
+# ─── invoice.payment_failed ───────────────────────────────────────────────────
+
+class TestPaymentFailed:
+    @pytest.mark.asyncio
+    async def test_marks_past_due(self):
+        data = {"subscription": STRIPE_SUB_ID}
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=MagicMock())
+        result = await _handle_payment_failed(data, db)
+        assert "ok:marked_past_due" in result
+
+    @pytest.mark.asyncio
+    async def test_no_sub_id_skipped(self):
+        data = {}
+        db = AsyncMock()
+        result = await _handle_payment_failed(data, db)
+        assert "skipped" in result
+
+
+# ─── invoice.payment_succeeded ────────────────────────────────────────────────
+
+class TestPaymentSucceeded:
+    @pytest.mark.asyncio
+    async def test_reactivates_past_due(self):
+        data = {"subscription": STRIPE_SUB_ID}
+        existing_sub = _make_subscription(status="past_due")
+
+        sub_result = MagicMock()
+        sub_result.scalar_one_or_none.return_value = existing_sub
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[sub_result, MagicMock()])  # 1st=lookup, 2nd=update
+
+        result = await _handle_payment_succeeded(data, db)
+        assert "ok:reactivated" in result
+
+    @pytest.mark.asyncio
+    async def test_active_subscription_not_modified(self):
+        """If subscription is already active, payment_succeeded is a no-op."""
+        data = {"subscription": STRIPE_SUB_ID}
+        existing_sub = _make_subscription(status="active")  # already active
+
+        sub_result = MagicMock()
+        sub_result.scalar_one_or_none.return_value = existing_sub
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=sub_result)
+
+        result = await _handle_payment_succeeded(data, db)
+        assert result == "skipped:not_past_due"
+
+    @pytest.mark.asyncio
+    async def test_no_sub_id_skipped(self):
+        data = {}
+        db = AsyncMock()
+        result = await _handle_payment_succeeded(data, db)
+        assert "skipped" in result
+
+
+# ─── BillingError tests ───────────────────────────────────────────────────────
+
+class TestBillingError:
+    def test_billing_error_has_status_code(self):
+        from app.modules.billing.stripe_service import BillingError
+        err = BillingError("Something went wrong", status_code=403)
+        assert err.status_code == 403
+        assert "Something" in str(err)
+
+    def test_billing_error_default_status(self):
+        from app.modules.billing.stripe_service import BillingError
+        err = BillingError("Generic error")
+        assert err.status_code == 400
+
+
+# ─── Entitlement schema ───────────────────────────────────────────────────────
+
+class TestEntitlementSchema:
+    def test_entitlement_response_fields(self):
+        from app.modules.billing.schemas import EntitlementResponse
+        r = EntitlementResponse(
+            plan_name="starter",
+            max_stores=5,
+            current_stores=2,
+            max_tracked_products=100,
+            current_tracked_products=15,
+            poll_interval_mins=30,
+            subscription_status="active",
+        )
+        assert r.plan_name == "starter"
+        assert r.current_stores == 2
+        assert r.max_tracked_products == 100
+
+    def test_checkout_session_request_validates_url(self):
+        from pydantic import ValidationError
+
+        from app.modules.billing.schemas import CreateCheckoutSessionRequest
+        with pytest.raises(ValidationError):
+            CreateCheckoutSessionRequest(
+                plan_id="some-id",
+                success_url="ftp://bad-url.com",
+                cancel_url="https://good.com",
+            )

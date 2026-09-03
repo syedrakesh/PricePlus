@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
     stripe_webhook_secret: str = ""
+    # Stripe Price IDs for paid plans (set after creating products in Stripe Dashboard)
+    stripe_price_id_starter: str = ""
+    stripe_price_id_pro: str = ""
 
     # ── Discovery ─────────────────────────────────────────────────────────────
     discovery_http_timeout: int = 30

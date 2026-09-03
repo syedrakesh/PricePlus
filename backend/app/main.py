@@ -33,7 +33,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         extra={"env": settings.app_env, "debug": settings.app_debug},
     )
 
-    # Future: warm up DB connection pool, validate Redis, etc.
+    # Configure Stripe API key
+    from app.modules.billing.stripe_service import configure_stripe
+    configure_stripe()
+
+    # Seed plans on startup (idempotent — safe to run every startup)
+    from app.modules.billing.seed_plans import seed_plans
+    await seed_plans()
+
     yield
 
     logger.info("PricePlus backend shutting down")

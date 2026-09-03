@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.modules.alerts.router import router as alerts_router
 from app.modules.auth.router import router as auth_router
+from app.modules.billing.router import router as billing_router
 from app.modules.discovery.router import router as discovery_router
 from app.modules.monitoring.router import router as monitoring_router
 from app.modules.stores.router import router as stores_router
@@ -17,3 +18,4 @@ api_router.include_router(discovery_router, prefix="/stores", tags=["discovery"]
 api_router.include_router(tracking_router, prefix="", tags=["tracking"])
 api_router.include_router(monitoring_router, prefix="", tags=["monitoring"])
 api_router.include_router(alerts_router, prefix="", tags=["alerts"])
+api_router.include_router(billing_router, prefix="", tags=["billing"])
