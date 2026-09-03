@@ -24,10 +24,10 @@ from app.modules.billing.entitlements import EntitlementError
 from app.modules.tracking.schemas import (
     BulkTrackResponse,
     TrackAllResponse,
-    TrackMultipleRequest,
-    TrackProductRequest,
     TrackedProductListResponse,
     TrackedProductResponse,
+    TrackMultipleRequest,
+    TrackProductRequest,
 )
 from app.modules.tracking.service import (
     TrackingError,

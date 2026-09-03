@@ -15,15 +15,13 @@ Key design decisions:
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.billing.entitlements import (
     EntitlementError,
-    FREE_PLAN_MAX_TRACKED_PRODUCTS,
     get_max_tracked_products,
 )
 from app.modules.discovery.models import DiscoveredProduct
@@ -32,7 +30,6 @@ from app.modules.tracking.models import TrackedProduct
 from app.modules.tracking.schemas import (
     BulkTrackResponse,
     TrackAllResponse,
-    TrackedProductResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,7 +140,7 @@ async def track_product(
                     "Please upgrade or untrack some products."
                 )
             existing.is_active = True
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
             await db.commit()
             await db.refresh(existing)
             logger.info(
@@ -243,7 +240,7 @@ async def track_multiple_products(
         if existing is not None and not existing.is_active:
             # Reactivate
             existing.is_active = True
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
             tracked_ids.append(str(product_id))
             current_count += 1
         else:
@@ -344,7 +341,7 @@ async def track_all_products(
                     TrackedProduct.user_id == user_id,
                     TrackedProduct.discovered_product_id == product.id,
                 )
-                .values(is_active=True, updated_at=datetime.now(timezone.utc))
+                .values(is_active=True, updated_at=datetime.now(UTC))
             )
             tracked_count += 1
             current_count += 1
@@ -404,7 +401,7 @@ async def untrack_product(
         return
 
     tracked.is_active = False
-    tracked.updated_at = datetime.now(timezone.utc)
+    tracked.updated_at = datetime.now(UTC)
     await db.commit()
 
     logger.info(

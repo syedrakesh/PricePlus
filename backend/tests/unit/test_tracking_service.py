@@ -7,8 +7,8 @@ idempotency, reactivation of previously untracked products.
 """
 
 import uuid
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -18,8 +18,6 @@ from app.modules.stores.models import CompetitorStore
 from app.modules.tracking.models import TrackedProduct
 from app.modules.tracking.service import (
     TrackingError,
-    track_all_products,
-    track_multiple_products,
     track_product,
     untrack_product,
 )
@@ -52,7 +50,7 @@ def _make_product(
     product.currency = "USD"
     product.is_available = True
     product.image_url = None
-    product.discovered_at = datetime.now(timezone.utc)
+    product.discovered_at = datetime.now(UTC)
     return product
 
 
@@ -68,8 +66,8 @@ def _make_tracked(
     tracked.discovered_product_id = product_id
     tracked.store_id = store_id
     tracked.is_active = is_active
-    tracked.created_at = datetime.now(timezone.utc)
-    tracked.updated_at = datetime.now(timezone.utc)
+    tracked.created_at = datetime.now(UTC)
+    tracked.updated_at = datetime.now(UTC)
     return tracked
 
 
@@ -144,11 +142,16 @@ class TestTrackProduct:
         product = _make_product()
         db = _make_db(store=store, product=product, active_count=3, max_products=10)
 
-        result = await track_product(db, USER_ID, STORE_ID, PRODUCT_ID)
+        await track_product(db, USER_ID, STORE_ID, PRODUCT_ID)
 
         db.add.assert_called_once()
         db.commit.assert_called()
-        assert isinstance(result, MagicMock)  # The add() target
+        # The newly created TrackedProduct is passed to db.add
+        added_obj = db.add.call_args[0][0]
+        assert isinstance(added_obj, TrackedProduct)
+        assert added_obj.user_id == USER_ID
+        assert added_obj.store_id == STORE_ID
+        assert added_obj.is_active is True
 
     @pytest.mark.asyncio
     async def test_store_not_found_raises_tracking_error(self):
@@ -310,6 +313,6 @@ class TestEntitlementBoundaries:
             max_products=10,
         )
 
-        result = await track_product(db, USER_ID, STORE_ID, PRODUCT_ID)
+        await track_product(db, USER_ID, STORE_ID, PRODUCT_ID)
 
         db.add.assert_called_once()
