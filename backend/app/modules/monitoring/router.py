@@ -2,7 +2,8 @@
 Monitoring router — read-only endpoints for price history and change events.
 
 Endpoints:
-  GET /tracked/{tracked_id}/snapshots      price history (paginated)
+  GET /tracked/{tracked_id}/timeline       unified chronological price history (Phase 6)
+  GET /tracked/{tracked_id}/snapshots      raw snapshot list (paginated)
   GET /tracked/{tracked_id}/changes        detected price changes (paginated)
   GET /price-changes                       all recent changes across all tracked products
 
@@ -24,6 +25,8 @@ from app.modules.monitoring.schemas import (
     PriceChangeResponse,
     ProductSnapshotResponse,
     SnapshotListResponse,
+    TimelineEntry,
+    TimelineResponse,
 )
 from app.modules.tracking.models import TrackedProduct
 
@@ -47,6 +50,106 @@ async def _verify_tracked_ownership(
     if tracked is None:
         raise HTTPException(status_code=404, detail="Tracked product not found")
     return tracked
+
+
+@router.get("/tracked/{tracked_id}/timeline", response_model=TimelineResponse)
+async def get_price_timeline(
+    tracked_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+) -> TimelineResponse:
+    """
+    Unified chronological price history for a tracked product. (Phase 6)
+
+    Returns a merged, time-ordered list of:
+    - snapshot entries: every price observation (even when unchanged)
+    - change entries: markers for detected price/availability changes
+
+    Each entry has a 'kind' field ('snapshot' | 'change') so the UI
+    can render snapshots as data points and changes as highlighted events.
+
+    Use this endpoint to render price charts and history timelines.
+    The most recent entries come first (newest → oldest).
+    """
+    user_id = uuid.UUID(user_id_str)
+    try:
+        tracked_uuid = uuid.UUID(tracked_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Tracked product not found") from None
+
+    await _verify_tracked_ownership(tracked_uuid, user_id, db)
+
+    # Load snapshots (latest first)
+    snaps_result = await db.execute(
+        select(ProductSnapshot)
+        .where(ProductSnapshot.tracked_product_id == tracked_uuid)
+        .order_by(ProductSnapshot.captured_at.desc())
+        .limit(limit)
+    )
+    snapshots = list(snaps_result.scalars().all())
+
+    # Load price changes in the same window
+    min_ts = snapshots[-1].captured_at if snapshots else None
+    changes_stmt = (
+        select(PriceChange)
+        .where(PriceChange.tracked_product_id == tracked_uuid)
+        .order_by(PriceChange.detected_at.desc())
+        .limit(limit)
+    )
+    if min_ts is not None:
+        changes_stmt = changes_stmt.where(PriceChange.detected_at >= min_ts)
+
+    changes_result = await db.execute(changes_stmt)
+    changes = list(changes_result.scalars().all())
+
+    # Build unified timeline: merge and sort by timestamp (newest first)
+    entries: list[TimelineEntry] = []
+
+    for snap in snapshots:
+        entries.append(TimelineEntry(
+            kind="snapshot",
+            timestamp=snap.captured_at.isoformat(),
+            price=float(snap.price) if snap.price is not None else None,
+            currency=snap.currency,
+            is_available=snap.is_available,
+            change_type=None,
+            old_price=None,
+            new_price=None,
+            pct_change=None,
+            error_message=snap.error_message,
+            ref_id=str(snap.id),
+        ))
+
+    for chg in changes:
+        entries.append(TimelineEntry(
+            kind="change",
+            timestamp=chg.detected_at.isoformat(),
+            price=float(chg.new_price) if chg.new_price is not None else None,
+            currency=chg.currency,
+            is_available=None,
+            change_type=chg.change_type,
+            old_price=float(chg.old_price) if chg.old_price is not None else None,
+            new_price=float(chg.new_price) if chg.new_price is not None else None,
+            pct_change=float(chg.pct_change) if chg.pct_change is not None else None,
+            error_message=None,
+            ref_id=str(chg.id),
+        ))
+
+    # Sort newest → oldest
+    entries.sort(key=lambda e: e.timestamp, reverse=True)
+    entries = entries[:limit]
+
+    # Summary stats
+    prices = [e.price for e in entries if e.price is not None and e.kind == "snapshot"]
+    return TimelineResponse(
+        entries=entries,
+        total_snapshots=len(snapshots),
+        total_changes=len(changes),
+        min_price=min(prices) if prices else None,
+        max_price=max(prices) if prices else None,
+        latest_price=prices[0] if prices else None,
+    )
 
 
 @router.get("/tracked/{tracked_id}/snapshots", response_model=SnapshotListResponse)

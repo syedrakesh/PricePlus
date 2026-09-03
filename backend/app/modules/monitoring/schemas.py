@@ -69,3 +69,71 @@ class SnapshotListResponse(BaseModel):
 class PriceChangeListResponse(BaseModel):
     changes: list[PriceChangeResponse]
     total: int
+
+
+class TimelineEntry(BaseModel):
+    """
+    One entry in a unified price timeline.
+
+    kind='snapshot' — a raw price observation (every poll cycle).
+    kind='change'   — a detected price/availability change event.
+
+    The UI should render snapshots as chart data points and changes
+    as highlighted markers on the timeline.
+    """
+
+    kind: str
+    """'snapshot' | 'change'"""
+
+    timestamp: str
+    """ISO-8601 datetime of the observation or change."""
+
+    price: float | None
+    """Current price at this point in time (new_price for changes)."""
+
+    currency: str
+    """Currency code, e.g. 'USD'."""
+
+    is_available: bool | None
+    """Availability at time of snapshot (None for change entries)."""
+
+    change_type: str | None
+    """price_increase | price_decrease | became_unavailable | became_available (change entries only)."""
+
+    old_price: float | None
+    """Previous price (change entries only)."""
+
+    new_price: float | None
+    """New price (change entries only — same as 'price')."""
+
+    pct_change: float | None
+    """Pre-computed percentage change (change entries only)."""
+
+    error_message: str | None
+    """Fetch error if the snapshot poll failed (snapshot entries only)."""
+
+    ref_id: str
+    """UUID of the underlying ProductSnapshot or PriceChange record."""
+
+
+class TimelineResponse(BaseModel):
+    """Unified price history timeline for one tracked product."""
+
+    entries: list[TimelineEntry]
+    """Chronologically sorted entries, newest first."""
+
+    total_snapshots: int
+    """Total snapshot entries in this window."""
+
+    total_changes: int
+    """Total price change events in this window."""
+
+    min_price: float | None
+    """Minimum observed price in this window."""
+
+    max_price: float | None
+    """Maximum observed price in this window."""
+
+    latest_price: float | None
+    """Most recent observed price."""
+
