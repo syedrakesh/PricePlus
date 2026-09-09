@@ -1,0 +1,130 @@
+.page {
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  animation: fadeIn 0.3s ease both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.header h1 { margin-bottom: var(--space-1); }
+
+.planBadge { margin-top: 6px; }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.statIcon { font-size: 28px; }
+
+.statValue {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.03em;
+}
+
+.statLabel {
+  font-size: var(--text-sm);
+  color: var(--color-text-2);
+  margin-top: 2px;
+}
+
+.statSub {
+  font-size: var(--text-xs);
+  color: var(--color-text-3);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.viewAll {
+  font-size: var(--text-sm);
+  color: var(--color-accent);
+  font-weight: 500;
+  transition: opacity var(--transition);
+}
+
+.viewAll:hover { opacity: 0.8; }
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12);
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.empty span { font-size: 32px; }
+
+.changeList { padding: var(--space-2) 0; }
+
+.changeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition);
+}
+
+.changeRow:last-child { border-bottom: none; }
+.changeRow:hover { background: var(--color-surface-2); }
+
+.changeIcon { font-size: 18px; flex-shrink: 0; }
+
+.changeInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.changeTime { font-size: var(--text-xs); color: var(--color-text-3); }
+
+.changePrices {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.oldPrice {
+  color: var(--color-text-3);
+  text-decoration: line-through;
+  font-weight: 400;
+}
+
+.newPrice { color: var(--color-text); }
+
+.pctDown { color: var(--color-success); font-size: var(--text-xs); }
+.pctUp   { color: var(--color-danger);  font-size: var(--text-xs); }

@@ -1,0 +1,55 @@
+.page {
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  animation: fadeIn 0.3s ease both;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.header { display: flex; align-items: flex-start; justify-content: space-between; }
+.header h1 { margin-bottom: var(--space-1); }
+
+/* Rules */
+.ruleList { padding: var(--space-2) 0; }
+
+.ruleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  transition: background var(--transition);
+}
+.ruleRow:last-child { border-bottom: none; }
+.ruleRow:hover { background: var(--color-surface-2); }
+
+.ruleCondition { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
+.ruleLabel { font-size: var(--text-sm); font-weight: 600; color: var(--color-text); }
+.ruleThreshold { font-size: var(--text-xs); color: var(--color-text-3); }
+
+.ruleMeta { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.ruleTriggered { font-size: var(--text-xs); color: var(--color-text-3); }
+
+.ruleActions { display: flex; gap: var(--space-2); }
+
+/* Fired alerts */
+.alertList { padding: var(--space-2) 0; }
+
+.alertRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition);
+}
+.alertRow:last-child { border-bottom: none; }
+.alertRow:hover { background: var(--color-surface-2); }
+
+.alertIcon { font-size: 18px; flex-shrink: 0; }
+
+.alertInfo { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.alertSummary { font-size: var(--text-sm); color: var(--color-text); }
+.alertTime { font-size: var(--text-xs); color: var(--color-text-3); }

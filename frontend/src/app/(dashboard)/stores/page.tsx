@@ -1,0 +1,145 @@
+'use client';
+
+import { useState } from 'react';
+import useSWR from 'swr';
+import { storesApi } from '@/lib/api';
+import { Card, CardHeader, CardBody } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Badge, StatusBadge } from '@/components/ui/Badge';
+import { EmptyState, PageLoader } from '@/components/ui/Spinner';
+import Link from 'next/link';
+import styles from './page.module.css';
+
+export default function StoresPage() {
+  const { data, isLoading, mutate } = useSWR('stores', () => storesApi.list());
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [discovering, setDiscovering] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setAdding(true);
+    try {
+      await storesApi.create(url, name || undefined);
+      setUrl(''); setName(''); setShowForm(false);
+      mutate();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to add store');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Remove this store and all its tracked products?')) return;
+    await storesApi.delete(id);
+    mutate();
+  }
+
+  async function handleDiscover(id: string) {
+    setDiscovering(id);
+    try {
+      await storesApi.triggerDiscovery(id);
+      mutate();
+    } finally {
+      setDiscovering(null);
+    }
+  }
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.header}>
+        <div>
+          <h1>Competitor Stores</h1>
+          <p>Add Shopify stores to discover and track their products</p>
+        </div>
+        <Button onClick={() => setShowForm(v => !v)} variant={showForm ? 'secondary' : 'primary'}>
+          {showForm ? 'Cancel' : '+ Add Store'}
+        </Button>
+      </div>
+
+      {showForm && (
+        <Card glow>
+          <CardHeader><h3>Add Competitor Store</h3></CardHeader>
+          <CardBody>
+            <form onSubmit={handleAdd} className={styles.form}>
+              <Input
+                label="Store URL"
+                type="url"
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                placeholder="https://competitor.myshopify.com"
+                required
+                hint="Any public Shopify store URL"
+              />
+              <Input
+                label="Display Name (optional)"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Acme Store"
+              />
+              {error && <p className={styles.error}>{error}</p>}
+              <Button type="submit" loading={adding}>Add Store</Button>
+            </form>
+          </CardBody>
+        </Card>
+      )}
+
+      {isLoading ? (
+        <PageLoader />
+      ) : !data?.stores.length ? (
+        <EmptyState
+          icon="🏪"
+          title="No stores yet"
+          description="Add a competitor's Shopify store URL to start discovering and tracking their products."
+          action={<Button onClick={() => setShowForm(true)}>Add your first store</Button>}
+        />
+      ) : (
+        <div className={styles.grid}>
+          {data.stores.map(store => (
+            <Card key={store.id} className={styles.storeCard}>
+              <CardBody>
+                <div className={styles.storeMeta}>
+                  <div className={styles.storeIcon}>🏪</div>
+                  <div className={styles.storeInfo}>
+                    <h3 className={styles.storeName}>{store.display_name ?? store.url}</h3>
+                    {store.display_name && (
+                      <span className={styles.storeUrl}>{new URL(store.url).hostname}</span>
+                    )}
+                  </div>
+                  <StatusBadge status={store.status} />
+                </div>
+
+                <div className={styles.storeStat}>
+                  <span className={styles.storeStatNum}>{store.products_count}</span>
+                  <span className={styles.storeStatLabel}>products discovered</span>
+                </div>
+
+                <div className={styles.storeActions}>
+                  <Link href={`/stores/${store.id}`}>
+                    <Button variant="secondary" size="sm">Browse Products</Button>
+                  </Link>
+                  <Button
+                    variant="ghost" size="sm"
+                    loading={discovering === store.id}
+                    onClick={() => handleDiscover(store.id)}
+                  >
+                    ↻ Discover
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={() => handleDelete(store.id)}>
+                    Remove
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

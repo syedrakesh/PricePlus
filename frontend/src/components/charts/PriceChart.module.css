@@ -1,0 +1,27 @@
+.chart { width: 100%; }
+
+.tooltip {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  min-width: 140px;
+  box-shadow: var(--shadow);
+}
+
+.tooltipTime { font-size: var(--text-xs); color: var(--color-text-3); margin-bottom: 4px; }
+.tooltipPrice { font-size: var(--text-lg); font-weight: 700; color: var(--color-text); }
+.tooltipChange { font-size: var(--text-xs); color: var(--color-text-2); text-transform: capitalize; margin-top: 2px; }
+.tooltipPct { font-size: var(--text-sm); font-weight: 600; margin-top: 2px; }
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12);
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.empty span { font-size: 32px; }
