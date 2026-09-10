@@ -53,11 +53,13 @@ def create_engine(database_url: str | None = None):
 # Module-level engine and session factory — created once at import time.
 # In tests, these are overridden via dependency injection.
 _engine = create_engine()
-_async_session_factory = async_sessionmaker(
+AsyncSessionLocal = async_sessionmaker(
     _engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
+_async_session_factory = AsyncSessionLocal
+
 
 
 def get_engine():
