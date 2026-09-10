@@ -41,6 +41,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.modules.billing.seed_plans import seed_plans
     await seed_plans()
 
+    # Clean up orphan discovery runs interrupted by server restarts
+    from app.core.db import AsyncSessionLocal
+    from sqlalchemy import update
+    from app.modules.discovery.models import DiscoveryRun
+    from datetime import datetime, UTC
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(DiscoveryRun)
+                .where(DiscoveryRun.status.in_(["pending", "running"]))
+                .values(
+                    status="failed",
+                    error_message="Interrupted by server restart",
+                    completed_at=datetime.now(UTC),
+                )
+            )
+            await db.commit()
+    except Exception as exc:
+        logger.warning("Failed to cleanup orphan discovery runs: %s", exc)
+
     yield
 
     logger.info("PricePlus backend shutting down")

@@ -67,8 +67,10 @@ async def run_discovery_pipeline(
         logger.error("DiscoveryRun %s not found", discovery_run_id)
         return
 
-    # Load store
+    # Load store & user settings
     from app.modules.stores.models import CompetitorStore
+    from app.modules.settings.models import UserSettings
+
     store_result = await db.execute(
         select(CompetitorStore).where(CompetitorStore.id == run.store_id)
     )
@@ -76,6 +78,15 @@ async def run_discovery_pipeline(
     if store is None:
         await _fail_run(db, run, "Competitor store not found")
         return
+
+    # Fetch user settings for discovery rate control
+    settings_res = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == store.user_id)
+    )
+    user_settings = settings_res.scalar_one_or_none()
+    concurrency = user_settings.discovery_concurrency if user_settings else 2
+    min_delay = user_settings.discovery_min_delay if user_settings else 0.8
+    max_delay = user_settings.discovery_max_delay if user_settings else 1.5
 
     store_url = store.url
     parsed_store = urlparse(store_url)
@@ -86,7 +97,15 @@ async def run_discovery_pipeline(
     await db.commit()
 
     try:
-        await _execute_pipeline(db, run, store_url, store_host)
+        await _execute_pipeline(
+            db=db,
+            run=run,
+            store_url=store_url,
+            store_host=store_host,
+            concurrency=concurrency,
+            min_delay=min_delay,
+            max_delay=max_delay,
+        )
     except Exception as exc:
         logger.exception(
             "Unexpected error in discovery pipeline for run %s: %s",
@@ -111,6 +130,9 @@ async def _execute_pipeline(
     run: DiscoveryRun,
     store_url: str,
     store_host: str,
+    concurrency: int = 2,
+    min_delay: float = 0.8,
+    max_delay: float = 1.5,
 ) -> None:
     """Inner pipeline — separated for clean error handling at top level."""
 
@@ -172,15 +194,18 @@ async def _execute_pipeline(
 
     if products_to_fetch:
         logger.info(
-            "Fetching product data for %d products (of %d total)",
-            len(products_to_fetch),
-            len(all_parsed_products),
+            "Fetching product data for %d products (concurrency=%d, delay=%.1f-%.1fs)",
+            len(products_to_fetch), concurrency, min_delay, max_delay,
         )
         await _fetch_product_data_batch(
             db=db,
             store_url=store_url,
             store_id=run.store_id,
             products=products_to_fetch,
+            run=run,
+            concurrency=concurrency,
+            min_delay=min_delay,
+            max_delay=max_delay,
         )
 
 
@@ -306,51 +331,103 @@ async def _fetch_product_data_batch(
     store_url: str,
     store_id: uuid.UUID,
     products: list[ParsedProductURL],
+    run: DiscoveryRun,
+    concurrency: int = 2,
+    min_delay: float = 0.8,
+    max_delay: float = 1.5,
 ) -> None:
     """
-    Fetch .json product data for a batch of products concurrently.
-
-    Uses asyncio.gather with limited concurrency to avoid overwhelming the store.
+    Fetch .json product data using user-configured concurrency and jitter delays.
     """
-    semaphore = asyncio.Semaphore(5)  # Max 5 concurrent requests
+    import random
+    from datetime import UTC, datetime
+
+    COMMIT_BATCH_SIZE = 10
+
+    total = len(products)
+    fetched_count = 0
+    pending_writes: list[tuple] = []
+    lock = asyncio.Lock()
+    sem = asyncio.Semaphore(concurrency)
+
+    logger.info(
+        "Starting rate-limited product data fetch (%d workers, delay=%.1f-%.1fs) for %d products",
+        concurrency, min_delay, max_delay, total,
+    )
 
     async def fetch_one(product: ParsedProductURL) -> None:
-        async with semaphore:
-            json_data = await fetch_product_json(
-                store_url=store_url,
-                handle=product.handle,
-                rate_limit_delay=0.2,
-            )
-            if json_data is None:
-                return
-
-            extracted = extract_product_data(json_data)
-            if extracted is None:
-                return
-
-            # Update the discovered product with enriched data
-            await db.execute(
-                update(DiscoveredProduct)
-                .where(
-                    DiscoveredProduct.store_id == store_id,
-                    DiscoveredProduct.handle == product.handle,
+        nonlocal fetched_count
+        async with sem:
+            await asyncio.sleep(random.uniform(min_delay, max_delay))
+            try:
+                json_data = await fetch_product_json(
+                    store_url=store_url,
+                    handle=product.handle,
+                    rate_limit_delay=0.0,
                 )
-                .values(
-                    title=extracted.title,
-                    current_price=extracted.price,
-                    compare_at_price=extracted.compare_at_price,
-                    currency=extracted.currency,
-                    is_available=extracted.is_available,
-                    is_on_sale=extracted.is_on_sale,
-                    is_discontinued=extracted.is_discontinued,
-                    image_url=extracted.image_url or product.image_url,
-                    raw_data=extracted.raw_data,
-                    data_fetched_at=datetime.now(UTC),
-                )
-            )
+            except Exception as exc:
+                logger.warning("Failed fetching %r: %s", product.handle, exc)
+                json_data = None
 
-    await asyncio.gather(*[fetch_one(p) for p in products], return_exceptions=True)
-    await db.commit()
+            extracted = extract_product_data(json_data) if json_data else None
+
+            async with lock:
+                fetched_count += 1
+                if extracted is not None:
+                    pending_writes.append((
+                        product.handle,
+                        extracted.title,
+                        extracted.price,
+                        extracted.compare_at_price,
+                        extracted.currency,
+                        extracted.is_available,
+                        extracted.is_on_sale,
+                        extracted.is_discontinued,
+                        extracted.image_url or product.image_url,
+                        extracted.raw_data,
+                    ))
+
+                should_commit = (
+                    fetched_count % COMMIT_BATCH_SIZE == 0
+                    or fetched_count == total
+                )
+                if should_commit and pending_writes:
+                    for (
+                        handle, title, price, compare_at, currency,
+                        is_avail, is_on_sale, is_disc, img_url, raw
+                    ) in pending_writes:
+                        await db.execute(
+                            update(DiscoveredProduct)
+                            .where(
+                                DiscoveredProduct.store_id == store_id,
+                                DiscoveredProduct.handle == handle,
+                            )
+                            .values(
+                                title=title,
+                                current_price=price,
+                                compare_at_price=compare_at,
+                                currency=currency,
+                                is_available=is_avail,
+                                is_on_sale=is_on_sale,
+                                is_discontinued=is_disc,
+                                image_url=img_url,
+                                raw_data=raw,
+                                data_fetched_at=datetime.now(UTC),
+                            )
+                        )
+                    pending_writes.clear()
+                    run.products_fetched = fetched_count
+                    await db.commit()
+
+                    logger.info(
+                        "Product fetch progress: %d/%d (%.0f%%)",
+                        fetched_count, total,
+                        100 * fetched_count / total,
+                    )
+
+    tasks = [asyncio.create_task(fetch_one(p)) for p in products]
+    await asyncio.gather(*tasks)
+    logger.info("Finished fetching product data: %d/%d products processed", fetched_count, total)
 
 
 # ─── Run lifecycle helpers ────────────────────────────────────────────────────

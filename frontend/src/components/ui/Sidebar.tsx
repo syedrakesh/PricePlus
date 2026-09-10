@@ -11,6 +11,7 @@ const NAV = [
   { href: '/tracking', label: 'Products',   icon: '📦' },
   { href: '/alerts',   label: 'Alerts',     icon: '🔔' },
   { href: '/billing',  label: 'Billing',    icon: '💳' },
+  { href: '/settings', label: 'Settings',   icon: '⚙️' },
 ];
 
 export function Sidebar() {

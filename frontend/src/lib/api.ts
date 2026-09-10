@@ -67,10 +67,22 @@ export const authApi = {
 
 // ─── Stores ───────────────────────────────────────────────────────────────────
 
+export interface DiscoveryRunSummary {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed';
+  products_discovered: number;
+  products_fetched: number;
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
 export interface Store {
   id: string; user_id: string; url: string; display_name: string | null;
   platform: string; status: string; last_error: string | null;
+  last_discovery_at: string | null;
   products_count: number; created_at: string;
+  latest_discovery_run: DiscoveryRunSummary | null;
 }
 
 export const storesApi = {
@@ -81,7 +93,7 @@ export const storesApi = {
   triggerDiscovery: (id: string) =>
     request<{ run_id: string; message: string }>(`/stores/${id}/discover`, { method: 'POST' }),
   discoveryStatus: (id: string, runId: string) =>
-    request<{ status: string; products_discovered: number; products_created: number }>(`/stores/${id}/discover/${runId}`),
+    request<{ status: string; products_discovered: number; products_created: number; products_fetched: number }>(`/stores/${id}/discover/${runId}`),
 };
 
 // ─── Products ─────────────────────────────────────────────────────────────────
@@ -220,5 +232,28 @@ export const billingApi = {
   portal: (returnUrl: string) =>
     request<{ portal_url: string }>('/billing/portal', {
       method: 'POST', body: JSON.stringify({ return_url: returnUrl }),
+    }),
+};
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+export interface UserSettings {
+  user_id: string;
+  discovery_concurrency: number;
+  discovery_min_delay: number;
+  discovery_max_delay: number;
+  updated_at: string;
+}
+
+export const settingsApi = {
+  get: () => request<UserSettings>('/settings'),
+  update: (data: {
+    discovery_concurrency?: number;
+    discovery_min_delay?: number;
+    discovery_max_delay?: number;
+  }) =>
+    request<UserSettings>('/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
     }),
 };

@@ -28,6 +28,7 @@ class DiscoveryRunResponse(BaseModel):
     products_created: int
     products_updated: int
     products_failed: int
+    products_fetched: int    # How many .json fetches done — used for ETA
 
     error_message: str | None
     started_at: str
@@ -51,6 +52,7 @@ class DiscoveryRunResponse(BaseModel):
             products_created=run.products_created,
             products_updated=run.products_updated,
             products_failed=run.products_failed,
+            products_fetched=run.products_fetched,
             error_message=run.error_message,
             started_at=run.started_at.isoformat(),
             completed_at=run.completed_at.isoformat() if run.completed_at else None,

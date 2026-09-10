@@ -69,6 +69,12 @@ class DiscoveryRun(Base):
     products_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     products_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     products_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    products_fetched: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="Count of product .json fetches completed (for ETA progress)",
+    )
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

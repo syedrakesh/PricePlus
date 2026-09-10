@@ -103,22 +103,20 @@ def extract_product_data(json_response: dict) -> ExtractedProductData | None:
 
         for variant in variants:
             # ── Availability ──────────────────────────────────────────────────
-            # Shopify's public storefront .json always includes 'available' bool
-            if "available" in variant:
+            # Shopify's storefront .json includes 'available' bool.
+            # If 'available' is missing/not found, treat as False (sold out).
+            if "available" in variant and variant["available"] is not None:
                 v_avail = bool(variant["available"])
             else:
-                # Fallback for stores that use Storefront API / custom setups
-                inv_mgmt = variant.get("inventory_management")
+                # Fallback for stores that expose inventory fields
                 inv_policy = variant.get("inventory_policy")
                 inv_qty = variant.get("inventory_quantity")
 
                 if inv_qty is not None:
                     v_avail = inv_qty > 0 or inv_policy == "continue"
-                elif inv_mgmt == "shopify" and inv_policy == "deny":
-                    v_avail = False
                 else:
-                    # No inventory data available — assume in stock
-                    v_avail = True
+                    # Missing 'available' object -> treat as sold out (is_available = False)
+                    v_avail = False
 
             if v_avail:
                 is_available = True

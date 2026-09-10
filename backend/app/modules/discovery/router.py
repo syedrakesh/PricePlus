@@ -104,16 +104,30 @@ async def trigger_discovery(
     existing_run = existing_result.scalar_one_or_none()
 
     if existing_run is not None:
-        logger.info(
-            "Discovery already in progress for store %s (run %s)",
-            store_id,
-            existing_run.id,
-        )
-        return TriggerDiscoveryResponse(
-            discovery_run_id=str(existing_run.id),
-            status=existing_run.status,
-            message="Discovery is already in progress for this store.",
-        )
+        from datetime import datetime, UTC
+        now = datetime.now(UTC)
+        started_at = existing_run.started_at.replace(tzinfo=UTC) if existing_run.started_at.tzinfo is None else existing_run.started_at
+        age_seconds = (now - started_at).total_seconds()
+
+        # If existing run is older than 3 minutes, mark it failed so user can restart
+        if age_seconds > 180:
+            logger.warning("Recovering stuck discovery run %s (age %.0fs)", existing_run.id, age_seconds)
+            existing_run.status = "failed"
+            existing_run.error_message = "Stuck run timed out"
+            existing_run.completed_at = now
+            await db.commit()
+            existing_run = None
+        else:
+            logger.info(
+                "Discovery already in progress for store %s (run %s)",
+                store_id,
+                existing_run.id,
+            )
+            return TriggerDiscoveryResponse(
+                discovery_run_id=str(existing_run.id),
+                status=existing_run.status,
+                message="Discovery is already in progress for this store.",
+            )
 
     # Create a new DiscoveryRun record
     run = DiscoveryRun(

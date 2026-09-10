@@ -131,3 +131,11 @@ class TestExtractProductData:
         assert data.price is None          # $0 treated as no price (discontinued)
         assert data.is_discontinued is True
         assert data.is_available is True   # availability is separate from price
+
+    def test_missing_available_key_treated_as_sold_out(self):
+        """If 'available' key is missing or not present in variant JSON, treat as sold out."""
+        data = extract_product_data(_make_product_json(
+            variants=[{"price": "15.00"}]  # no 'available' key
+        ))
+        assert data is not None
+        assert data.is_available is False  # treated as sold out

@@ -68,10 +68,12 @@ async def list_competitor_stores(
     stores = await list_stores(db, user_id)
 
     from sqlalchemy import func, select
-    from app.modules.discovery.models import DiscoveredProduct
+    from app.modules.discovery.models import DiscoveredProduct, DiscoveryRun
 
     store_ids = [s.id for s in stores]
     counts_map: dict[uuid.UUID, int] = {}
+    runs_map: dict[uuid.UUID, DiscoveryRun] = {}
+
     if store_ids:
         counts_res = await db.execute(
             select(DiscoveredProduct.store_id, func.count(DiscoveredProduct.id))
@@ -80,8 +82,24 @@ async def list_competitor_stores(
         )
         counts_map = {row[0]: row[1] for row in counts_res.all()}
 
+        # Fetch latest discovery run for each store
+        runs_res = await db.execute(
+            select(DiscoveryRun)
+            .where(DiscoveryRun.store_id.in_(store_ids))
+            .order_by(DiscoveryRun.store_id, DiscoveryRun.started_at.desc())
+            .distinct(DiscoveryRun.store_id)
+        )
+        runs_map = {r.store_id: r for r in runs_res.scalars().all()}
+
     return StoreListResponse(
-        stores=[StoreResponse.from_orm_model(s, counts_map.get(s.id, 0)) for s in stores],
+        stores=[
+            StoreResponse.from_orm_model(
+                s,
+                products_count=counts_map.get(s.id, 0),
+                latest_run=runs_map.get(s.id),
+            )
+            for s in stores
+        ],
         total=len(stores),
     )
 
@@ -108,7 +126,24 @@ async def get_competitor_store(
     except StoreError as e:
         _handle_store_error(e)
 
-    return StoreResponse.from_orm_model(store)
+    from sqlalchemy import func, select
+    from app.modules.discovery.models import DiscoveredProduct, DiscoveryRun
+
+    counts_res = await db.execute(
+        select(func.count(DiscoveredProduct.id))
+        .where(DiscoveredProduct.store_id == store.id)
+    )
+    products_count = counts_res.scalar() or 0
+
+    runs_res = await db.execute(
+        select(DiscoveryRun)
+        .where(DiscoveryRun.store_id == store.id)
+        .order_by(DiscoveryRun.started_at.desc())
+        .limit(1)
+    )
+    latest_run = runs_res.scalar_one_or_none()
+
+    return StoreResponse.from_orm_model(store, products_count=products_count, latest_run=latest_run)
 
 
 @router.delete("/{store_id}", status_code=204)
