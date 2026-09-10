@@ -37,8 +37,16 @@ async function request<T>(
       const body = await res.json();
       detail = body.detail ?? detail;
     } catch { /* ignore */ }
+
+    if (res.status === 401 && typeof window !== 'undefined' && !path.startsWith('/auth/')) {
+      localStorage.removeItem('pp_access_token');
+      localStorage.removeItem('pp_refresh_token');
+      window.location.href = '/login';
+    }
+
     throw new ApiError(res.status, detail);
   }
+
 
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
