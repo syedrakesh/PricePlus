@@ -9,9 +9,23 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState, PageLoader } from '@/components/ui/Spinner';
 import styles from './page.module.css';
 
+function getPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total];
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
 export default function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [page, setPage] = useState(1);
+  const [inputPage, setInputPage] = useState('');
   const pageSize = 40;
 
   const { data, isLoading, mutate } = useSWR(
@@ -31,9 +45,24 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  const goToPage = (p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const tracked = data?.products.filter(p => p.is_tracked).length ?? 0;
   const total = data?.total ?? 0;
   const totalPages = data ? Math.ceil(data.total / pageSize) : 1;
+  const pageNumbers = getPageNumbers(page, totalPages);
+
+  const handleJumpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseInt(inputPage, 10);
+    if (!isNaN(val) && val >= 1 && val <= totalPages) {
+      goToPage(val);
+      setInputPage('');
+    }
+  };
 
   return (
     <div className={styles.page}>
@@ -41,7 +70,7 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         <div>
           <h1>Store Products</h1>
           <p className={styles.sub}>
-            {isLoading ? 'Loading…' : `${total} products discovered · Page ${page} of ${totalPages}`}
+            {isLoading ? 'Loading…' : `${total} products discovered · Showing page ${page} of ${totalPages}`}
           </p>
         </div>
       </div>
@@ -93,32 +122,74 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
           </div>
 
           {totalPages > 1 && (
-            <div className={styles.pagination}>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page <= 1}
-                onClick={() => {
-                  setPage(p => Math.max(1, p - 1));
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              >
-                ← Previous
-              </Button>
-              <span className={styles.pageInfo}>
-                Page {page} of {totalPages} ({data?.total} total products)
-              </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={page >= totalPages}
-                onClick={() => {
-                  setPage(p => Math.min(totalPages, p + 1));
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              >
-                Next →
-              </Button>
+            <div className={styles.paginationWrapper}>
+              <div className={styles.pagination}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page <= 1}
+                  onClick={() => goToPage(1)}
+                  title="First page"
+                >
+                  «
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page <= 1}
+                  onClick={() => goToPage(page - 1)}
+                >
+                  ← Prev
+                </Button>
+
+                <div className={styles.pageNumbers}>
+                  {pageNumbers.map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`dots-${idx}`} className={styles.ellipsis}>…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        className={`${styles.pageBtn} ${p === page ? styles.activePageBtn : ''}`}
+                        onClick={() => goToPage(p)}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page >= totalPages}
+                  onClick={() => goToPage(page + 1)}
+                >
+                  Next →
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page >= totalPages}
+                  onClick={() => goToPage(totalPages)}
+                  title="Last page"
+                >
+                  »
+                </Button>
+              </div>
+
+              <form onSubmit={handleJumpSubmit} className={styles.jumpForm}>
+                <span>Go to page:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  placeholder={String(page)}
+                  value={inputPage}
+                  onChange={e => setInputPage(e.target.value)}
+                  className={styles.jumpInput}
+                />
+                <Button type="submit" size="sm" variant="secondary">Go</Button>
+              </form>
             </div>
           )}
         </>
@@ -126,4 +197,5 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     </div>
   );
 }
+
 
