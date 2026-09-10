@@ -1,7 +1,27 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { isLoggedIn } from '@/lib/auth';
 import { Sidebar } from '@/components/ui/Sidebar';
+import { PageLoader } from '@/components/ui/Spinner';
 import styles from './DashboardLayout.module.css';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    if (!isLoggedIn()) {
+      router.replace('/login');
+    }
+  }, [router]);
+
+  if (!mounted) {
+    return <PageLoader />;
+  }
+
   return (
     <div className={styles.shell}>
       <Sidebar />
@@ -9,3 +29,4 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 }
+

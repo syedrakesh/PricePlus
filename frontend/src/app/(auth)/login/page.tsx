@@ -1,14 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { authApi } from '@/lib/api';
-import { saveTokens } from '@/lib/auth';
+import { saveTokens, isLoggedIn } from '@/lib/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import styles from './page.module.css';
-import type { Metadata } from 'next';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,6 +15,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isLoggedIn()) {
+      router.replace('/');
+    }
+  }, [router]);
+
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
