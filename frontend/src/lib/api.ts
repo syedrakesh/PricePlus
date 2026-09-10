@@ -99,12 +99,19 @@ export interface TrackedProduct {
   product: DiscoveredProduct;
 }
 
+export interface TrackedProductList {
+  tracked_products: TrackedProduct[];
+  total: number;
+  active_count: number;
+}
+
 export const trackingApi = {
-  list: () => request<{ tracked: TrackedProduct[]; total: number }>('/tracked'),
+  list: () => request<TrackedProductList>('/tracked'),
   track: (discoveredProductId: string) =>
     request<TrackedProduct>('/track', { method: 'POST', body: JSON.stringify({ discovered_product_id: discoveredProductId }) }),
   untrack: (trackedId: string) => request<void>(`/tracked/${trackedId}`, { method: 'DELETE' }),
 };
+
 
 // ─── Monitoring ───────────────────────────────────────────────────────────────
 

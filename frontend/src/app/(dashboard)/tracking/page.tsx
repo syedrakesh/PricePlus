@@ -29,7 +29,7 @@ export default function TrackingPage() {
 
       {isLoading ? (
         <PageLoader />
-      ) : !data?.tracked.length ? (
+      ) : !(data?.tracked_products ?? []).length ? (
         <EmptyState
           icon="📦"
           title="No tracked products"
@@ -38,7 +38,8 @@ export default function TrackingPage() {
         />
       ) : (
         <div className={styles.list}>
-          {data.tracked.map(item => {
+          {(data?.tracked_products ?? []).map(item => {
+
             const p = item.product;
             return (
               <Card key={item.id} className={styles.row}>
