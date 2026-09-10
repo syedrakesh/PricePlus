@@ -52,7 +52,20 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     setTracking(t => ({ ...t, [discoveredProductId]: true }));
     try {
       await trackingApi.track(discoveredProductId);
-      mutate();
+      if (data) {
+        mutate(
+          {
+            ...data,
+            products: data.products.map(p =>
+              p.id === discoveredProductId ? { ...p, is_tracked: true } : p
+            ),
+          },
+          false
+        );
+      }
+      await mutate();
+    } catch (err) {
+      console.error('Failed to track product:', err);
     } finally {
       setTracking(t => ({ ...t, [discoveredProductId]: false }));
     }
@@ -194,14 +207,30 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
                   )}
                   <h3 className={styles.productTitle}>{product.title ?? product.handle}</h3>
                   <div className={styles.productMeta}>
-                    {product.current_price !== null ? (
-                      <span className={styles.price}>${product.current_price.toFixed(2)}</span>
+                    {product.is_discontinued ? (
+                      <span className={styles.noPrice}>Discontinued</span>
+                    ) : product.current_price !== null ? (
+                      <div className={styles.priceBlock}>
+                        <span className={styles.price}>${product.current_price.toFixed(2)}</span>
+                        {product.is_on_sale && product.compare_at_price !== null && (
+                          <span className={styles.comparePrice}>${product.compare_at_price.toFixed(2)}</span>
+                        )}
+                      </div>
                     ) : (
                       <span className={styles.noPrice}>No price</span>
                     )}
-                    <Badge variant={product.is_available ? 'success' : 'warning'}>
-                      {product.is_available ? 'In stock' : 'Out of stock'}
-                    </Badge>
+                    <div className={styles.badgeRow}>
+                      {product.is_on_sale && !product.is_discontinued && (
+                        <Badge variant="danger">🏷️ Sale</Badge>
+                      )}
+                      {product.is_discontinued ? (
+                        <Badge variant="warning">Discontinued</Badge>
+                      ) : (
+                        <Badge variant={product.is_available ? 'success' : 'warning'}>
+                          {product.is_available ? 'In stock' : 'Sold out'}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <Button
                     size="sm"

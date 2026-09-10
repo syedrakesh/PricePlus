@@ -162,9 +162,16 @@
 
 .productMeta {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.priceBlock {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .price {
@@ -173,9 +180,22 @@
   color: var(--color-text);
 }
 
+.comparePrice {
+  font-size: var(--text-sm);
+  color: var(--color-text-3);
+  text-decoration: line-through;
+}
+
 .noPrice {
   font-size: var(--text-sm);
   color: var(--color-text-3);
+}
+
+.badgeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
 }
 
 .paginationWrapper {

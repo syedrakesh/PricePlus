@@ -338,8 +338,11 @@ async def _fetch_product_data_batch(
                 .values(
                     title=extracted.title,
                     current_price=extracted.price,
+                    compare_at_price=extracted.compare_at_price,
                     currency=extracted.currency,
                     is_available=extracted.is_available,
+                    is_on_sale=extracted.is_on_sale,
+                    is_discontinued=extracted.is_discontinued,
                     image_url=extracted.image_url or product.image_url,
                     raw_data=extracted.raw_data,
                     data_fetched_at=datetime.now(UTC),

@@ -122,9 +122,12 @@ class TestExtractProductData:
         assert data.price is None
         assert data.is_available is False
 
-    def test_zero_price_extracted(self):
+    def test_zero_price_discontinued(self):
+        """Price $0.00 means the product is discontinued/hidden, not a free item."""
         data = extract_product_data(_make_product_json(
             variants=[{"price": "0.00", "available": True}]
         ))
         assert data is not None
-        assert data.price == pytest.approx(0.0)
+        assert data.price is None          # $0 treated as no price (discontinued)
+        assert data.is_discontinued is True
+        assert data.is_available is True   # availability is separate from price

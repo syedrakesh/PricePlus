@@ -234,7 +234,11 @@ async def _do_poll(
             .where(DiscoveredProduct.id == discovered.id)
             .values(
                 current_price=extracted.price,
+                compare_at_price=extracted.compare_at_price,
+                currency=extracted.currency,
                 is_available=extracted.is_available,
+                is_on_sale=extracted.is_on_sale,
+                is_discontinued=extracted.is_discontinued,
                 data_fetched_at=now,
             )
         )

@@ -39,8 +39,12 @@ export default function TrackingPage() {
       ) : (
         <div className={styles.list}>
           {(data?.tracked_products ?? []).map(item => {
+            const p = item.product ?? item;
+            let hostname = '';
+            try {
+              if (p.product_url) hostname = new URL(p.product_url).hostname;
+            } catch { /* ignore */ }
 
-            const p = item.product;
             return (
               <Card key={item.id} className={styles.row}>
                 <CardBody>
@@ -52,10 +56,10 @@ export default function TrackingPage() {
                     )}
                     <div className={styles.info}>
                       <h3 className={styles.title}>{p.title ?? p.handle}</h3>
-                      <span className={styles.url}>{new URL(p.product_url).hostname}</span>
+                      {hostname && <span className={styles.url}>{hostname}</span>}
                     </div>
                     <div className={styles.priceCol}>
-                      {p.current_price !== null ? (
+                      {p.current_price != null ? (
                         <span className={styles.price}>${p.current_price.toFixed(2)}</span>
                       ) : (
                         <span className={styles.noPrice}>—</span>

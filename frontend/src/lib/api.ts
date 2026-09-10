@@ -88,8 +88,9 @@ export const storesApi = {
 
 export interface DiscoveredProduct {
   id: string; store_id: string; handle: string; product_url: string;
-  title: string | null; current_price: number | null; currency: string;
-  is_available: boolean; image_url: string | null; is_tracked: boolean;
+  title: string | null; current_price: number | null; compare_at_price: number | null;
+  currency: string; is_available: boolean; is_on_sale: boolean;
+  is_discontinued: boolean; image_url: string | null; is_tracked: boolean;
 }
 
 export interface ProductFilters {
@@ -121,8 +122,11 @@ export const productsApi = {
 
 export interface TrackedProduct {
   id: string; user_id: string; discovered_product_id: string;
-  is_active: boolean; created_at: string;
-  product: DiscoveredProduct;
+  store_id: string; is_active: boolean; created_at: string;
+  handle?: string | null; product_url?: string | null; title?: string | null;
+  current_price?: number | null; currency?: string | null; is_available?: boolean | null;
+  image_url?: string | null;
+  product?: DiscoveredProduct;
 }
 
 export interface TrackedProductList {

@@ -136,10 +136,27 @@ class DiscoveredProduct(Base):
     current_price: Mapped[float | None] = mapped_column(
         Numeric(12, 4),
         nullable=True,
-        comment="Latest known price",
+        comment="Latest known current/sale price",
+    )
+    compare_at_price: Mapped[float | None] = mapped_column(
+        Numeric(12, 4),
+        nullable=True,
+        comment="Original price before sale (Shopify compare_at_price); None if not on sale",
     )
     currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_on_sale: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="True when compare_at_price > current_price",
+    )
+    is_discontinued: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="True when product price is $0.00 (hidden/discontinued by seller)",
+    )
 
     # Sitemap metadata
     sitemap_lastmod: Mapped[datetime | None] = mapped_column(

@@ -261,8 +261,23 @@ async def list_discovered_products(
         await asyncio.gather(*[hydrate_one(p) for p in missing_items])
         await db.commit()
 
+    # Fetch set of active tracked discovered_product_ids for this user & store
+    from app.modules.tracking.models import TrackedProduct
+
+    tracked_result = await db.execute(
+        select(TrackedProduct.discovered_product_id).where(
+            TrackedProduct.user_id == user_id,
+            TrackedProduct.store_id == store.id,
+            TrackedProduct.is_active == True,
+        )
+    )
+    tracked_ids = set(tracked_result.scalars().all())
+
     return DiscoveredProductListResponse(
-        products=[DiscoveredProductResponse.from_orm_model(p) for p in products],
+        products=[
+            DiscoveredProductResponse.from_orm_model(p, is_tracked=(p.id in tracked_ids))
+            for p in products
+        ],
         total=total,
         page=page,
         page_size=page_size,
