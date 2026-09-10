@@ -235,10 +235,37 @@ async def list_discovered_products(
     )
     products = list(products_result.scalars().all())
 
+    # On-demand hydration for products missing details on this page
+    missing_items = [p for p in products if p.current_price is None or p.title is None]
+    if missing_items:
+        import asyncio
+        from app.modules.discovery.fetcher import fetch_product_json
+        from app.modules.discovery.orchestrator import _update_product_details
+        from app.modules.discovery.product_extractor import extract_product_data
+
+        semaphore = asyncio.Semaphore(5)
+
+        async def hydrate_one(p: DiscoveredProduct) -> None:
+            async with semaphore:
+                try:
+                    raw_json = await fetch_product_json(
+                        store_url=store.url,
+                        handle=p.handle,
+                        rate_limit_delay=0.3,
+                    )
+                    extracted = extract_product_data(raw_json)
+                    await _update_product_details(db, store.id, p.handle, extracted)
+                except Exception as exc:
+                    logger.debug("On-demand hydration error for %s: %s", p.handle, exc)
+
+        await asyncio.gather(*[hydrate_one(p) for p in missing_items])
+        await db.commit()
+
     return DiscoveredProductListResponse(
         products=[DiscoveredProductResponse.from_orm_model(p) for p in products],
         total=total,
         page=page,
         page_size=page_size,
     )
+
 

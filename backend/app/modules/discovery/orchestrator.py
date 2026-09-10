@@ -167,11 +167,8 @@ async def _execute_pipeline(
         run.products_discovered = total_created + total_updated
         await db.commit()
 
-    # Step 4: Fetch product data (.json) for newly discovered products
-    # We process the first N products to avoid blocking for too long
-    # (large stores can have 10k+ products)
-    MAX_DATA_FETCH = 200  # Fetch data for up to 200 products per discovery run
-    products_to_fetch = all_parsed_products[:MAX_DATA_FETCH]
+    # Step 4: Fetch product data (.json) for all discovered products
+    products_to_fetch = all_parsed_products
 
     if products_to_fetch:
         logger.info(
@@ -185,6 +182,7 @@ async def _execute_pipeline(
             store_id=run.store_id,
             products=products_to_fetch,
         )
+
 
     # Determine final status
     if total_failed > 0 and total_created + total_updated == 0:
