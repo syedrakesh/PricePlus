@@ -84,12 +84,30 @@ export interface DiscoveredProduct {
   is_available: boolean; image_url: string | null; is_tracked: boolean;
 }
 
+export interface ProductFilters {
+  q?: string;
+  min_price?: number;
+  max_price?: number;
+  is_available?: boolean;
+}
+
 export const productsApi = {
-  list: (storeId: string, page = 1, pageSize = 50) =>
-    request<{ products: DiscoveredProduct[]; total: number }>(
-      `/stores/${storeId}/products?page=${page}&page_size=${pageSize}`
-    ),
+  list: (storeId: string, page = 1, pageSize = 50, filters: ProductFilters = {}) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    if (filters.q?.trim()) params.append('q', filters.q.trim());
+    if (filters.min_price !== undefined) params.append('min_price', String(filters.min_price));
+    if (filters.max_price !== undefined) params.append('max_price', String(filters.max_price));
+    if (filters.is_available !== undefined) params.append('is_available', String(filters.is_available));
+
+    return request<{ products: DiscoveredProduct[]; total: number; page: number; page_size: number }>(
+      `/stores/${storeId}/products?${params.toString()}`
+    );
+  },
 };
+
 
 // ─── Tracking ─────────────────────────────────────────────────────────────────
 

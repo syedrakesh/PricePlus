@@ -181,31 +181,55 @@ async def get_discovery_run(
 @router.get("/{store_id}/products", response_model=DiscoveredProductListResponse)
 async def list_discovered_products(
     store_id: str,
+    q: str | None = Query(default=None, description="Search by title or handle"),
+    min_price: float | None = Query(default=None, ge=0, description="Minimum price"),
+    max_price: float | None = Query(default=None, ge=0, description="Maximum price"),
+    is_available: bool | None = Query(default=None, description="Filter by stock availability"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user_id_str: str = Depends(get_current_user_id),
 ) -> DiscoveredProductListResponse:
     """
-    List all products discovered for a competitor store.
-
-    Paginated. Returns products ordered by title (then handle as fallback).
+    List products discovered for a competitor store with optional multi-criteria filtering.
     """
     user_id = uuid.UUID(user_id_str)
     store = await _get_owned_store(store_id, user_id, db)
 
-    # Count
-    count_result = await db.execute(
-        select(func.count()).where(DiscoveredProduct.store_id == store.id)
-    )
+    # Base query
+    stmt = select(DiscoveredProduct).where(DiscoveredProduct.store_id == store.id)
+    count_stmt = select(func.count()).where(DiscoveredProduct.store_id == store.id)
+
+    # Apply search filter (q)
+    if q and q.strip():
+        search_pattern = f"%{q.strip()}%"
+        q_filter = (DiscoveredProduct.title.ilike(search_pattern)) | (DiscoveredProduct.handle.ilike(search_pattern))
+        stmt = stmt.where(q_filter)
+        count_stmt = count_stmt.where(q_filter)
+
+    # Apply min_price filter
+    if min_price is not None:
+        stmt = stmt.where(DiscoveredProduct.current_price >= min_price)
+        count_stmt = count_stmt.where(DiscoveredProduct.current_price >= min_price)
+
+    # Apply max_price filter
+    if max_price is not None:
+        stmt = stmt.where(DiscoveredProduct.current_price <= max_price)
+        count_stmt = count_stmt.where(DiscoveredProduct.current_price <= max_price)
+
+    # Apply is_available filter
+    if is_available is not None:
+        stmt = stmt.where(DiscoveredProduct.is_available == is_available)
+        count_stmt = count_stmt.where(DiscoveredProduct.is_available == is_available)
+
+    # Execute count
+    count_result = await db.execute(count_stmt)
     total = count_result.scalar_one()
 
-    # Fetch page
+    # Execute pagination
     offset = (page - 1) * page_size
     products_result = await db.execute(
-        select(DiscoveredProduct)
-        .where(DiscoveredProduct.store_id == store.id)
-        .order_by(DiscoveredProduct.title.asc().nulls_last(), DiscoveredProduct.handle.asc())
+        stmt.order_by(DiscoveredProduct.title.asc().nulls_last(), DiscoveredProduct.handle.asc())
         .offset(offset)
         .limit(page_size)
     )
@@ -217,3 +241,4 @@ async def list_discovered_products(
         page=page,
         page_size=page_size,
     )
+

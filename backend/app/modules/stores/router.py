@@ -66,10 +66,25 @@ async def list_competitor_stores(
     """
     user_id = uuid.UUID(user_id_str)
     stores = await list_stores(db, user_id)
+
+    from sqlalchemy import func, select
+    from app.modules.discovery.models import DiscoveredProduct
+
+    store_ids = [s.id for s in stores]
+    counts_map: dict[uuid.UUID, int] = {}
+    if store_ids:
+        counts_res = await db.execute(
+            select(DiscoveredProduct.store_id, func.count(DiscoveredProduct.id))
+            .where(DiscoveredProduct.store_id.in_(store_ids))
+            .group_by(DiscoveredProduct.store_id)
+        )
+        counts_map = {row[0]: row[1] for row in counts_res.all()}
+
     return StoreListResponse(
-        stores=[StoreResponse.from_orm_model(s) for s in stores],
+        stores=[StoreResponse.from_orm_model(s, counts_map.get(s.id, 0)) for s in stores],
         total=len(stores),
     )
+
 
 
 @router.get("/{store_id}", response_model=StoreResponse)

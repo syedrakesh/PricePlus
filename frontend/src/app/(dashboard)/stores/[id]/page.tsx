@@ -28,9 +28,22 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
   const [inputPage, setInputPage] = useState('');
   const pageSize = 40;
 
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock'>('all');
+
+  const activeFilters = {
+    q: searchQuery.trim() || undefined,
+    min_price: minPrice ? parseFloat(minPrice) : undefined,
+    max_price: maxPrice ? parseFloat(maxPrice) : undefined,
+    is_available: stockFilter === 'all' ? undefined : stockFilter === 'in_stock',
+  };
+
   const { data, isLoading, mutate } = useSWR(
-    `store-products-${id}-${page}`,
-    () => productsApi.list(id, page, pageSize)
+    `store-products-${id}-${page}-${searchQuery}-${minPrice}-${maxPrice}-${stockFilter}`,
+    () => productsApi.list(id, page, pageSize, activeFilters)
   );
 
   const [tracking, setTracking] = useState<Record<string, boolean>>({});
@@ -50,6 +63,15 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const resetFilters = () => {
+    setSearchQuery('');
+    setMinPrice('');
+    setMaxPrice('');
+    setStockFilter('all');
+    setPage(1);
+  };
+
+  const hasActiveFilters = !!(searchQuery || minPrice || maxPrice || stockFilter !== 'all');
   const tracked = data?.products.filter(p => p.is_tracked).length ?? 0;
   const total = data?.total ?? 0;
   const totalPages = data ? Math.ceil(data.total / pageSize) : 1;
@@ -64,16 +86,91 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     }
   };
 
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
         <div>
           <h1>Store Products</h1>
           <p className={styles.sub}>
-            {isLoading ? 'Loading…' : `${total} products discovered · Showing page ${page} of ${totalPages}`}
+            {isLoading ? 'Loading…' : `${total} products found · Showing page ${page} of ${totalPages}`}
           </p>
         </div>
       </div>
+
+      {/* Search & Filter Bar */}
+      <Card className={styles.filterCard}>
+        <CardBody>
+          <div className={styles.filterBar}>
+            <div className={styles.searchInputGroup}>
+              <span className={styles.searchIcon}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search products by title or handle (e.g. biryani, chicken)..."
+                value={searchQuery}
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
+                className={styles.searchInput}
+              />
+              {searchQuery && (
+                <button className={styles.clearBtn} onClick={() => setSearchQuery('')}>✕</button>
+              )}
+            </div>
+
+            <div className={styles.filterGroup}>
+              <div className={styles.priceRange}>
+                <input
+                  type="number"
+                  placeholder="Min $"
+                  min="0"
+                  step="0.01"
+                  value={minPrice}
+                  onChange={e => {
+                    setMinPrice(e.target.value);
+                    setPage(1);
+                  }}
+                  className={styles.filterInput}
+                />
+                <span className={styles.rangeDash}>–</span>
+                <input
+                  type="number"
+                  placeholder="Max $"
+                  min="0"
+                  step="0.01"
+                  value={maxPrice}
+                  onChange={e => {
+                    setMaxPrice(e.target.value);
+                    setPage(1);
+                  }}
+                  className={styles.filterInput}
+                />
+              </div>
+
+              <select
+                value={stockFilter}
+                onChange={e => {
+                  setStockFilter(e.target.value as any);
+                  setPage(1);
+                }}
+                className={styles.filterSelect}
+              >
+                <option value="all">All Stock Statuses</option>
+                <option value="in_stock">In Stock Only</option>
+                <option value="out_of_stock">Out of Stock Only</option>
+              </select>
+
+              {hasActiveFilters && (
+                <Button size="sm" variant="secondary" onClick={resetFilters}>
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
 
       {isLoading ? (
         <PageLoader />

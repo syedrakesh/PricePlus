@@ -11,6 +11,115 @@
 .header h1 { margin-bottom: var(--space-1); }
 .sub { font-size: var(--text-sm); }
 
+.filterCard {
+  margin-bottom: var(--space-2);
+}
+
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.searchInputGroup {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 12px;
+  font-size: var(--text-sm);
+  color: var(--color-text-3);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 8px 36px 8px 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  transition: border-color var(--transition);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.clearBtn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--color-text-3);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  border-radius: 50%;
+}
+.clearBtn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.priceRange {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.rangeDash {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.filterInput {
+  width: 90px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.filterInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.filterSelect {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.filterSelect:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

@@ -40,12 +40,13 @@ class StoreResponse(BaseModel):
     status: str
     last_error: str | None
     last_discovery_at: str | None
+    products_count: int = 0
     created_at: str
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_orm_model(cls, store: object) -> "StoreResponse":
+    def from_orm_model(cls, store: object, products_count: int = 0) -> "StoreResponse":
         from app.modules.stores.models import CompetitorStore
         assert isinstance(store, CompetitorStore)
         return cls(
@@ -58,8 +59,10 @@ class StoreResponse(BaseModel):
             last_discovery_at=(
                 store.last_discovery_at.isoformat() if store.last_discovery_at else None
             ),
+            products_count=products_count,
             created_at=store.created_at.isoformat(),
         )
+
 
 
 class StoreListResponse(BaseModel):
