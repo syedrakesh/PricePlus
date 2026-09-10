@@ -64,6 +64,17 @@ async def _get_owned_store(
     return store
 
 
+async def _run_discovery_bg(run_id: uuid.UUID) -> None:
+    from app.core.db import AsyncSessionLocal
+    from app.modules.discovery.orchestrator import run_discovery_pipeline
+
+    async with AsyncSessionLocal() as db:
+        try:
+            await run_discovery_pipeline(db, run_id)
+        except Exception as exc:
+            logger.exception("Background discovery failed for run %s: %s", run_id, exc)
+
+
 @router.post("/{store_id}/discover", response_model=TriggerDiscoveryResponse, status_code=202)
 async def trigger_discovery(
     store_id: str,
@@ -79,6 +90,7 @@ async def trigger_discovery(
     If a discovery run is already in progress for this store, returns
     the existing run rather than starting a duplicate.
     """
+    import asyncio
     user_id = uuid.UUID(user_id_str)
     store = await _get_owned_store(store_id, user_id, db)
 
@@ -114,31 +126,22 @@ async def trigger_discovery(
     await db.commit()
     await db.refresh(run)
 
-    # Queue the Celery task (fire and forget)
+    # Trigger background execution immediately in-process
+    asyncio.create_task(_run_discovery_bg(run.id))
+
+    # Also queue via Celery if available
     try:
         from app.workers.discovery_tasks import run_discovery_task
         run_discovery_task.delay(str(run.id))
-        logger.info(
-            "Discovery task queued: store=%s run=%s",
-            store_id,
-            run.id,
-        )
     except Exception as exc:
-        # If Celery is unavailable, mark run as failed immediately
-        logger.error("Failed to queue discovery task: %s", exc)
-        run.status = "failed"
-        run.error_message = f"Failed to queue discovery task: {exc}"
-        await db.commit()
-        raise HTTPException(
-            status_code=503,
-            detail="Discovery service is temporarily unavailable. Please try again shortly.",
-        ) from exc
+        logger.debug("Celery task queueing skipped: %s", exc)
 
     return TriggerDiscoveryResponse(
         discovery_run_id=str(run.id),
         status="pending",
         message="Discovery started. Use the run ID to poll progress.",
     )
+
 
 
 @router.get("/{store_id}/discover/{run_id}", response_model=DiscoveryRunResponse)

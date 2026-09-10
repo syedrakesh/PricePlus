@@ -44,7 +44,7 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
 
       {isLoading ? (
         <PageLoader />
-      ) : !data?.products.length ? (
+      ) : !(data?.products ?? []).length ? (
         <EmptyState
           icon="📦"
           title="No products found"
@@ -52,7 +52,8 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         />
       ) : (
         <div className={styles.grid}>
-          {data.products.map(product => (
+          {(data?.products ?? []).map(product => (
+
             <Card key={product.id} className={styles.productCard}>
               <CardBody>
                 {product.image_url && (

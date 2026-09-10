@@ -25,7 +25,8 @@ export default function StoresPage() {
     setError('');
     setAdding(true);
     try {
-      await storesApi.create(url, name || undefined);
+      const store = await storesApi.create(url, name || undefined);
+      await storesApi.triggerDiscovery(store.id);
       setUrl(''); setName(''); setShowForm(false);
       mutate();
     } catch (err: unknown) {
@@ -34,6 +35,7 @@ export default function StoresPage() {
       setAdding(false);
     }
   }
+
 
   async function handleDelete(id: string) {
     if (!confirm('Remove this store and all its tracked products?')) return;

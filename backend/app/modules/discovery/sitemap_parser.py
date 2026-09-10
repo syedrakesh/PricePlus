@@ -314,8 +314,11 @@ def _parse_lastmod(text: str) -> datetime | None:
     return None
 
 
-def _local_name(tag: str) -> str:
+def _local_name(tag: str | None) -> str:
     """Strip XML namespace from a tag name. '{ns}localname' → 'localname'."""
+    if not isinstance(tag, str):
+        return ""
     if tag.startswith("{"):
         return tag.split("}", 1)[1]
     return tag
+
