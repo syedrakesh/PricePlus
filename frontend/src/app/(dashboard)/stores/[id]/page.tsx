@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, use } from 'react';
 import useSWR from 'swr';
 import { productsApi, trackingApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -9,11 +9,13 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState, PageLoader } from '@/components/ui/Spinner';
 import styles from './page.module.css';
 
-export default function StoreDetailPage({ params }: { params: { id: string } }) {
+export default function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const { data, isLoading, mutate } = useSWR(
-    `store-products-${params.id}`,
-    () => productsApi.list(params.id, 1, 100)
+    `store-products-${id}`,
+    () => productsApi.list(id, 1, 100)
   );
+
   const [tracking, setTracking] = useState<Record<string, boolean>>({});
 
   async function handleTrack(discoveredProductId: string) {

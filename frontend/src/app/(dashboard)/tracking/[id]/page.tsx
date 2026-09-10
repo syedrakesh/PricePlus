@@ -1,6 +1,8 @@
 'use client';
 
+import { use } from 'react';
 import useSWR from 'swr';
+
 import { monitoringApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -8,11 +10,13 @@ import { PriceChart } from '@/components/charts/PriceChart';
 import { PageLoader } from '@/components/ui/Spinner';
 import styles from './page.module.css';
 
-export default function TrackingDetailPage({ params }: { params: { id: string } }) {
+export default function TrackingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const { data, isLoading } = useSWR(
-    `timeline-${params.id}`,
-    () => monitoringApi.timeline(params.id, 200)
+    `timeline-${id}`,
+    () => monitoringApi.timeline(id, 200)
   );
+
 
   if (isLoading) return <PageLoader />;
 
