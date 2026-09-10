@@ -59,6 +59,45 @@ def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
         raise HTTPException(status_code=404, detail=f"{label} not found") from None
 
 
+@router.post("/track", response_model=TrackedProductResponse, status_code=201)
+async def track_single_product_direct(
+    data: TrackProductRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+) -> TrackedProductResponse:
+    """
+    Start tracking a discovered product directly by discovered_product_id.
+    Automatically resolves store_id from discovered_products table.
+    """
+    from sqlalchemy import select
+    from app.modules.discovery.models import DiscoveredProduct
+
+    user_id = _parse_uuid(user_id_str, "User")
+    product_uuid = _parse_uuid(data.discovered_product_id, "Product")
+
+    # Resolve store_id from discovered_products table
+    result = await db.execute(
+        select(DiscoveredProduct.store_id).where(DiscoveredProduct.id == product_uuid)
+    )
+    store_id = result.scalar_one_or_none()
+    if store_id is None:
+        raise HTTPException(status_code=404, detail="Discovered product not found")
+
+    try:
+        tracked = await track_product(db, user_id, store_id, product_uuid)
+    except TrackingError as e:
+        _handle_tracking_error(e)
+    except EntitlementError as e:
+        _handle_entitlement_error(e)
+
+    try:
+        tracked_obj, product_obj = await get_tracked_product(db, user_id, tracked.id)
+    except TrackingError:
+        return TrackedProductResponse.from_orm_model(tracked)
+
+    return TrackedProductResponse.from_orm_model(tracked_obj, product_obj)
+
+
 # ─── Per-store tracking endpoints ─────────────────────────────────────────────
 
 @router.post("/stores/{store_id}/track", response_model=TrackedProductResponse, status_code=201)
