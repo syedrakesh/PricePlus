@@ -11,9 +11,12 @@ import styles from './page.module.css';
 
 export default function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const [page, setPage] = useState(1);
+  const pageSize = 40;
+
   const { data, isLoading, mutate } = useSWR(
-    `store-products-${id}`,
-    () => productsApi.list(id, 1, 100)
+    `store-products-${id}-${page}`,
+    () => productsApi.list(id, page, pageSize)
   );
 
   const [tracking, setTracking] = useState<Record<string, boolean>>({});
@@ -29,7 +32,8 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const tracked = data?.products.filter(p => p.is_tracked).length ?? 0;
-  const total = data?.products.length ?? 0;
+  const total = data?.total ?? 0;
+  const totalPages = data ? Math.ceil(data.total / pageSize) : 1;
 
   return (
     <div className={styles.page}>
@@ -37,7 +41,7 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         <div>
           <h1>Store Products</h1>
           <p className={styles.sub}>
-            {isLoading ? 'Loading…' : `${total} products discovered · ${tracked} tracked`}
+            {isLoading ? 'Loading…' : `${total} products discovered · Page ${page} of ${totalPages}`}
           </p>
         </div>
       </div>
@@ -51,43 +55,75 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
           description="Trigger a discovery run to scan this store's product catalog."
         />
       ) : (
-        <div className={styles.grid}>
-          {(data?.products ?? []).map(product => (
-
-            <Card key={product.id} className={styles.productCard}>
-              <CardBody>
-                {product.image_url && (
-                  <img src={product.image_url} alt={product.title ?? ''} className={styles.productImg} />
-                )}
-                {!product.image_url && (
-                  <div className={styles.productImgPlaceholder}>📦</div>
-                )}
-                <h3 className={styles.productTitle}>{product.title ?? product.handle}</h3>
-                <div className={styles.productMeta}>
-                  {product.current_price !== null ? (
-                    <span className={styles.price}>${product.current_price.toFixed(2)}</span>
-                  ) : (
-                    <span className={styles.noPrice}>No price</span>
+        <>
+          <div className={styles.grid}>
+            {(data?.products ?? []).map(product => (
+              <Card key={product.id} className={styles.productCard}>
+                <CardBody>
+                  {product.image_url && (
+                    <img src={product.image_url} alt={product.title ?? ''} className={styles.productImg} />
                   )}
-                  <Badge variant={product.is_available ? 'success' : 'warning'}>
-                    {product.is_available ? 'In stock' : 'Out of stock'}
-                  </Badge>
-                </div>
-                <Button
-                  size="sm"
-                  variant={product.is_tracked ? 'secondary' : 'primary'}
-                  style={{ width: '100%', marginTop: '12px' }}
-                  loading={tracking[product.id]}
-                  disabled={product.is_tracked}
-                  onClick={() => !product.is_tracked && handleTrack(product.id)}
-                >
-                  {product.is_tracked ? '✓ Tracking' : 'Track Product'}
-                </Button>
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+                  {!product.image_url && (
+                    <div className={styles.productImgPlaceholder}>📦</div>
+                  )}
+                  <h3 className={styles.productTitle}>{product.title ?? product.handle}</h3>
+                  <div className={styles.productMeta}>
+                    {product.current_price !== null ? (
+                      <span className={styles.price}>${product.current_price.toFixed(2)}</span>
+                    ) : (
+                      <span className={styles.noPrice}>No price</span>
+                    )}
+                    <Badge variant={product.is_available ? 'success' : 'warning'}>
+                      {product.is_available ? 'In stock' : 'Out of stock'}
+                    </Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={product.is_tracked ? 'secondary' : 'primary'}
+                    style={{ width: '100%', marginTop: '12px' }}
+                    loading={tracking[product.id]}
+                    disabled={product.is_tracked}
+                    onClick={() => !product.is_tracked && handleTrack(product.id)}
+                  >
+                    {product.is_tracked ? '✓ Tracking' : 'Track Product'}
+                  </Button>
+                </CardBody>
+              </Card>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className={styles.pagination}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page <= 1}
+                onClick={() => {
+                  setPage(p => Math.max(1, p - 1));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              >
+                ← Previous
+              </Button>
+              <span className={styles.pageInfo}>
+                Page {page} of {totalPages} ({data?.total} total products)
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={page >= totalPages}
+                onClick={() => {
+                  setPage(p => Math.min(totalPages, p + 1));
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              >
+                Next →
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
+
