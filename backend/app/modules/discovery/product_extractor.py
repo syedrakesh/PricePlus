@@ -64,9 +64,24 @@ def extract_product_data(json_response: dict) -> ExtractedProductData | None:
         is_available = False
 
         for variant in variants:
-            # Availability
-            if variant.get("available", False):
+            # Availability evaluation for Shopify REST JSON
+            if "available" in variant:
+                v_avail = bool(variant["available"])
+            else:
+                inv_mgmt = variant.get("inventory_management")
+                inv_policy = variant.get("inventory_policy")
+                inv_qty = variant.get("inventory_quantity")
+
+                if inv_qty is not None:
+                    v_avail = inv_qty > 0 or inv_policy == "continue"
+                elif inv_mgmt == "shopify" and inv_policy == "deny" and inv_qty == 0:
+                    v_avail = False
+                else:
+                    v_avail = True
+
+            if v_avail:
                 is_available = True
+
 
             # Price — stored as string in Shopify API
             variant_price_str = variant.get("price", "")
