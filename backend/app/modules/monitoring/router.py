@@ -32,7 +32,45 @@ from app.modules.tracking.models import TrackedProduct
 
 logger = logging.getLogger(__name__)
 
+from app.modules.monitoring.engine import monitoring_engine
+
 router = APIRouter()
+
+
+@router.get("/monitoring/engine/status")
+async def get_monitoring_engine_status(
+    user_id_str: str = Depends(get_current_user_id),
+):
+    """Return status and telemetry of the background price monitoring engine."""
+    return monitoring_engine.get_status_dict()
+
+
+@router.post("/monitoring/engine/trigger")
+async def trigger_monitoring_cycle_now(
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+):
+    """Trigger an immediate price monitoring cycle across all active tracked products."""
+    res = await monitoring_engine.trigger_now(db)
+    return {
+        "message": "Monitoring cycle completed",
+        "result": res,
+        "engine": monitoring_engine.get_status_dict(),
+    }
+
+
+@router.post("/monitoring/engine/restart")
+async def restart_monitoring_engine(
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+):
+    """Restart the background monitoring service loop and trigger an immediate cycle."""
+    engine_status = await monitoring_engine.restart_engine()
+    return {
+        "message": "Monitoring engine restarted successfully",
+        "engine": engine_status,
+    }
+
 
 
 async def _verify_tracked_ownership(
@@ -110,7 +148,7 @@ async def get_price_timeline(
         entries.append(TimelineEntry(
             kind="snapshot",
             timestamp=snap.captured_at.isoformat(),
-            price=float(snap.price) if snap.price is not None else None,
+            price=snap.price if snap.price is not None else None,
             currency=snap.currency,
             is_available=snap.is_available,
             change_type=None,
@@ -125,13 +163,13 @@ async def get_price_timeline(
         entries.append(TimelineEntry(
             kind="change",
             timestamp=chg.detected_at.isoformat(),
-            price=float(chg.new_price) if chg.new_price is not None else None,
+            price=chg.new_price if chg.new_price is not None else None,
             currency=chg.currency,
             is_available=None,
             change_type=chg.change_type,
-            old_price=float(chg.old_price) if chg.old_price is not None else None,
-            new_price=float(chg.new_price) if chg.new_price is not None else None,
-            pct_change=float(chg.pct_change) if chg.pct_change is not None else None,
+            old_price=chg.old_price if chg.old_price is not None else None,
+            new_price=chg.new_price if chg.new_price is not None else None,
+            pct_change=chg.pct_change if chg.pct_change is not None else None,
             error_message=None,
             ref_id=str(chg.id),
         ))

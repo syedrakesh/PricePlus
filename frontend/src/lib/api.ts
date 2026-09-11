@@ -181,11 +181,32 @@ export interface TimelineResponse {
   min_price: number | null; max_price: number | null; latest_price: number | null;
 }
 
+export interface MonitoringEngineStatus {
+  status: 'running' | 'idle' | 'stalled' | 'stopped' | 'error';
+  is_running: boolean;
+  started_at: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  seconds_until_next_run: number;
+  interval_seconds: number;
+  total_cycles_run: number;
+  last_polled_count: number;
+  last_changes_count: number;
+  last_error_count: number;
+  last_error_message: string | null;
+}
+
 export const monitoringApi = {
   timeline: (trackedId: string, limit = 100) =>
     request<TimelineResponse>(`/tracked/${trackedId}/timeline?limit=${limit}`),
   priceChanges: (page = 1) =>
     request<{ changes: PriceChange[]; total: number }>(`/price-changes?page=${page}`),
+  getEngineStatus: () =>
+    request<MonitoringEngineStatus>('/monitoring/engine/status'),
+  triggerPollNow: () =>
+    request<{ message: string; result: any; engine: MonitoringEngineStatus }>('/monitoring/engine/trigger', { method: 'POST' }),
+  restartEngine: () =>
+    request<{ message: string; engine: MonitoringEngineStatus }>('/monitoring/engine/restart', { method: 'POST' }),
 };
 
 export interface PriceChange {

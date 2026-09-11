@@ -6,6 +6,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, PageLoader } from '@/components/ui/Spinner';
 import Link from 'next/link';
+import { TrackingStatusBanner } from '@/components/ui/TrackingStatusBanner';
 import styles from './page.module.css';
 
 export default function TrackingPage() {
@@ -29,6 +30,8 @@ export default function TrackingPage() {
           <p>{data ? `${data.total} products being monitored` : 'Loading…'}</p>
         </div>
       </div>
+
+      <TrackingStatusBanner onPollComplete={() => mutate()} />
 
       {isLoading ? (
         <PageLoader />

@@ -25,8 +25,9 @@ Security:
 import logging
 import uuid
 
+from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
@@ -626,6 +627,18 @@ async def admin_assign_user_subscription(
             status="active",
         )
         db.add(sub)
+
+    # Immediately sync user's active tracked products to the new plan's poll interval
+    from datetime import timedelta, UTC
+    from app.modules.tracking.models import TrackedProduct
+    await db.execute(
+        update(TrackedProduct)
+        .where(TrackedProduct.user_id == user_uuid, TrackedProduct.is_active == True)
+        .values(
+            next_check_at=datetime.now(UTC) + timedelta(minutes=plan.poll_interval_mins),
+            tracking_interval_minutes=None,
+        )
+    )
 
     await db.commit()
     await db.refresh(sub)

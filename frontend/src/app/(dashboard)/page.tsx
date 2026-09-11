@@ -6,6 +6,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { PageLoader } from '@/components/ui/Spinner';
 import Link from 'next/link';
+import { TrackingStatusBanner } from '@/components/ui/TrackingStatusBanner';
 import styles from './page.module.css';
 
 function StatCard({ label, value, sub, icon }: { label: string; value: string | number; sub?: string; icon: string }) {
@@ -27,8 +28,8 @@ function StatCard({ label, value, sub, icon }: { label: string; value: string | 
 
 export default function DashboardPage() {
   const { data: stores } = useSWR('stores', () => storesApi.list());
-  const { data: tracked } = useSWR('tracking', () => trackingApi.list());
-  const { data: changes, isLoading: changesLoading } = useSWR('recent-changes', () => monitoringApi.priceChanges());
+  const { data: tracked, mutate: mutateTracked } = useSWR('tracking', () => trackingApi.list());
+  const { data: changes, isLoading: changesLoading, mutate: mutateChanges } = useSWR('recent-changes', () => monitoringApi.priceChanges());
   const { data: entitlements } = useSWR('entitlements', () => billingApi.entitlements());
 
   const changeIcon: Record<string, string> = {
@@ -54,6 +55,8 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      <TrackingStatusBanner onPollComplete={() => { mutateTracked(); mutateChanges(); }} />
 
       {/* Stats */}
       <div className={styles.stats}>

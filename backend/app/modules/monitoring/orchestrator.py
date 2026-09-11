@@ -185,16 +185,15 @@ async def _do_poll(
     )
     db.add(snapshot)
 
-    # Calculate next_check_at using custom product interval OR user's active plan poll_interval_mins
+    # Calculate next_check_at using the user's active plan poll_interval_mins
     from datetime import timedelta
     from app.modules.billing.entitlements import EntitlementService
 
-    interval_mins = tracked.tracking_interval_minutes
-    if interval_mins is None:
-        user_plan = await EntitlementService.get_user_active_plan(tracked.user_id, db)
-        interval_mins = user_plan.poll_interval_mins if user_plan else 60
+    user_plan = await EntitlementService.get_user_active_plan(tracked.user_id, db)
+    interval_mins = user_plan.poll_interval_mins if user_plan else 60
 
     tracked.next_check_at = now + timedelta(minutes=interval_mins)
+    tracked.tracking_interval_minutes = None
 
     # Load previous snapshot for comparison
     prev_result = await db.execute(
