@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { trackingApi } from '@/lib/api';
+import { trackingApi, billingApi } from '@/lib/api';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,8 @@ import styles from './page.module.css';
 
 export default function TrackingPage() {
   const { data, isLoading, mutate } = useSWR('tracking', () => trackingApi.list());
+  const { data: usage } = useSWR('billing-usage', billingApi.getUsage);
+  const minInterval = usage?.min_poll_interval_mins ?? 1440;
 
   async function handleTogglePriority(item: any) {
     try {
@@ -103,12 +105,22 @@ export default function TrackingPage() {
                           fontSize: '0.75rem',
                         }}
                       >
-                        <option value="">Default Interval</option>
-                        <option value="1">⚡ 1 Minute (Realtime VIP)</option>
-                        <option value="5">⚡ 5 Minutes (Turbo)</option>
-                        <option value="15">15 Minutes</option>
-                        <option value="60">1 Hour (Enterprise)</option>
-                        <option value="360">6 Hours (Pro)</option>
+                        <option value="">Default Plan Interval</option>
+                        <option value="1" disabled={1 < minInterval}>
+                          {1 < minInterval ? '🔒 1 Minute (Enterprise)' : '⚡ 1 Minute (Realtime VIP)'}
+                        </option>
+                        <option value="5" disabled={5 < minInterval}>
+                          {5 < minInterval ? '🔒 5 Minutes (Enterprise)' : '⚡ 5 Minutes (Turbo)'}
+                        </option>
+                        <option value="15" disabled={15 < minInterval}>
+                          {15 < minInterval ? '🔒 15 Minutes (Pro)' : '15 Minutes'}
+                        </option>
+                        <option value="60" disabled={60 < minInterval}>
+                          {60 < minInterval ? '🔒 1 Hour (Pro)' : '1 Hour'}
+                        </option>
+                        <option value="360" disabled={360 < minInterval}>
+                          {360 < minInterval ? '🔒 6 Hours' : '6 Hours'}
+                        </option>
                         <option value="1440">24 Hours (Free)</option>
                       </select>
 
