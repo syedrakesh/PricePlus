@@ -61,7 +61,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("Failed to cleanup orphan discovery runs: %s", exc)
 
+    # Start periodic background monitoring task (polls due items every 60 seconds)
+    import asyncio
+    monitoring_task = None
+
+    async def _periodic_monitoring_loop() -> None:
+        from app.modules.monitoring.orchestrator import run_monitoring_cycle
+        logger.info("Background periodic monitoring loop started")
+        while True:
+            try:
+                await asyncio.sleep(60)
+                async with AsyncSessionLocal() as db:
+                    res = await run_monitoring_cycle(db)
+                    if res and res.get("polled", 0) > 0:
+                        logger.info("Background monitoring poll result: %s", res)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("Background monitoring loop error: %s", exc)
+
+    monitoring_task = asyncio.create_task(_periodic_monitoring_loop())
+
     yield
+
+    if monitoring_task:
+        monitoring_task.cancel()
 
     logger.info("PricePlus backend shutting down")
 

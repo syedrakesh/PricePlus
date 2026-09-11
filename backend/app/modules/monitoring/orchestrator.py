@@ -30,11 +30,13 @@ from datetime import UTC, datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.auth.models import User  # noqa: F401
 from app.modules.discovery.fetcher import FetchError, fetch_product_json
 from app.modules.discovery.models import DiscoveredProduct
 from app.modules.discovery.product_extractor import extract_product_data
 from app.modules.monitoring.models import PriceChange, ProductSnapshot
 from app.modules.monitoring.price_detector import SnapshotData, detect_price_change
+from app.modules.stores.models import CompetitorStore  # noqa: F401
 from app.modules.tracking.models import TrackedProduct
 
 logger = logging.getLogger(__name__)
@@ -44,21 +46,26 @@ _POLL_CONCURRENCY = 10  # Max concurrent product fetches
 
 async def run_monitoring_cycle(db: AsyncSession) -> dict:
     """
-    Run one full monitoring cycle: poll all active tracked products.
+    Run one full monitoring cycle: poll all active tracked products that are due for check.
 
     Returns a summary dict with counts for observability.
-    Called by the Celery beat task periodically.
+    Called by the Celery beat task or in-process background loop periodically.
     """
-    # Load all active tracked products with their store info
+    now = datetime.now(UTC)
+
+    # Load active tracked products due for checking (next_check_at <= now OR next_check_at IS NULL)
     rows = await db.execute(
         select(TrackedProduct, DiscoveredProduct)
         .join(DiscoveredProduct, DiscoveredProduct.id == TrackedProduct.discovered_product_id)
-        .where(TrackedProduct.is_active == True)  # noqa: E712
+        .where(
+            TrackedProduct.is_active.is_(True),
+            (TrackedProduct.next_check_at.is_(None)) | (TrackedProduct.next_check_at <= now),
+        )
     )
     active_tracked = list(rows.all())
 
     if not active_tracked:
-        logger.info("Monitoring cycle: no active tracked products")
+        logger.info("Monitoring cycle: no active tracked products due for poll")
         return {"polled": 0, "changes": 0, "errors": 0}
 
     logger.info("Monitoring cycle: polling %d active tracked products", len(active_tracked))
@@ -197,11 +204,18 @@ async def _do_poll(
 
     changed = False
 
-    if prev_snapshot is not None and error_message is None:
+    # Determine baseline previous price (from prev snapshot or discovered.current_price)
+    previous_price: float | None = None
+    if prev_snapshot is not None and prev_snapshot.price is not None:
+        previous_price = float(prev_snapshot.price)
+    elif discovered.current_price is not None:
+        previous_price = float(discovered.current_price)
+
+    if previous_price is not None and error_message is None:
         previous = SnapshotData(
-            price=float(prev_snapshot.price) if prev_snapshot.price is not None else None,
-            is_available=prev_snapshot.is_available,
-            currency=prev_snapshot.currency or "USD",
+            price=previous_price,
+            is_available=True,
+            currency=discovered.currency or "USD",
         )
         event = detect_price_change(previous, current)
 
@@ -211,7 +225,7 @@ async def _do_poll(
                 tracked_product_id=tracked.id,
                 discovered_product_id=discovered.id,
                 user_id=tracked.user_id,
-                from_snapshot_id=prev_snapshot.id,
+                from_snapshot_id=prev_snapshot.id if prev_snapshot else None,
                 to_snapshot_id=snapshot.id,
                 old_price=event.old_price,
                 new_price=event.new_price,
