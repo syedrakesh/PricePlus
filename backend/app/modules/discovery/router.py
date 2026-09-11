@@ -246,27 +246,32 @@ async def list_discovered_products(
     # On-demand hydration for products missing details on this page
     missing_items = [p for p in products if p.current_price is None or p.title is None]
     if missing_items:
-        import asyncio
+        from datetime import UTC, datetime
         from app.modules.discovery.fetcher import fetch_product_json
-        from app.modules.discovery.orchestrator import _update_product_details
         from app.modules.discovery.product_extractor import extract_product_data
 
-        semaphore = asyncio.Semaphore(5)
-
-        async def hydrate_one(p: DiscoveredProduct) -> None:
-            async with semaphore:
-                try:
-                    raw_json = await fetch_product_json(
-                        store_url=store.url,
-                        handle=p.handle,
-                        rate_limit_delay=0.3,
-                    )
+        for p in missing_items:
+            try:
+                raw_json = await fetch_product_json(
+                    store_url=store.url,
+                    handle=p.handle,
+                    rate_limit_delay=0.2,
+                )
+                if raw_json:
                     extracted = extract_product_data(raw_json)
-                    await _update_product_details(db, store.id, p.handle, extracted)
-                except Exception as exc:
-                    logger.debug("On-demand hydration error for %s: %s", p.handle, exc)
+                    if extracted:
+                        p.title = extracted.title or p.title
+                        p.current_price = extracted.price
+                        p.compare_at_price = extracted.compare_at_price
+                        p.currency = extracted.currency
+                        p.is_on_sale = extracted.is_on_sale
+                        p.is_discontinued = extracted.is_discontinued
+                        p.image_url = extracted.image_url or p.image_url
+                        p.raw_data = extracted.raw_data
+                        p.data_fetched_at = datetime.now(UTC)
+            except Exception as exc:
+                logger.debug("On-demand hydration error for %s: %s", p.handle, exc)
 
-        await asyncio.gather(*[hydrate_one(p) for p in missing_items])
         await db.commit()
 
     # Fetch set of active tracked discovered_product_ids for this user & store

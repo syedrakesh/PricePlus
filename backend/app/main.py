@@ -98,9 +98,15 @@ def create_app() -> FastAPI:
             "Unhandled exception",
             extra={"path": str(request.url), "method": request.method},
         )
+        headers = {}
+        origin = request.headers.get("origin")
+        if origin and (origin in settings.cors_origins or "*" in settings.cors_origins):
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error"},
+            headers=headers,
         )
 
     # ── Routes ────────────────────────────────────────────────────────────────
