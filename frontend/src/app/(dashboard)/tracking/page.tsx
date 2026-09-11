@@ -64,9 +64,6 @@ export default function TrackingPage() {
                       ) : (
                         <span className={styles.noPrice}>—</span>
                       )}
-                      <Badge variant={p.is_available ? 'success' : 'warning'}>
-                        {p.is_available ? 'In stock' : 'Out of stock'}
-                      </Badge>
                     </div>
                     <div className={styles.actions}>
                       <Link href={`/tracking/${item.id}`}>

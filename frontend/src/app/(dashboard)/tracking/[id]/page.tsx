@@ -113,9 +113,6 @@ export default function TrackingDetailPage({ params }: { params: Promise<{ id: s
               <span className={styles.snapPrice}>
                 {snap.price !== null ? `$${snap.price.toFixed(2)}` : '—'}
               </span>
-              <Badge variant={snap.is_available ? 'success' : 'warning'}>
-                {snap.is_available ? 'In stock' : 'Out of stock'}
-              </Badge>
               {snap.error_message && (
                 <span className={styles.snapError} title={snap.error_message}>⚠ Error</span>
               )}

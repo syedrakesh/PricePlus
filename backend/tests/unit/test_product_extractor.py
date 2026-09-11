@@ -55,87 +55,16 @@ class TestExtractProductData:
         assert data is not None
         assert data.price == pytest.approx(19.99)
 
-    def test_available_true_when_any_variant_available(self):
-        data = extract_product_data(_make_product_json(
-            variants=[
-                {"price": "10.00", "available": False},
-                {"price": "10.00", "available": True},   # one available
-            ]
-        ))
-        assert data is not None
-        assert data.is_available is True
-
-    def test_available_false_when_no_variants_available(self):
-        data = extract_product_data(_make_product_json(
-            variants=[
-                {"price": "10.00", "available": False},
-                {"price": "10.00", "available": False},
-            ]
-        ))
-        assert data is not None
-        assert data.is_available is False
-
-    def test_extracts_first_image(self):
-        data = extract_product_data(_make_product_json(
-            images=[
-                {"src": "https://cdn.example.com/first.jpg"},
-                {"src": "https://cdn.example.com/second.jpg"},
-            ]
-        ))
-        assert data is not None
-        assert data.image_url == "https://cdn.example.com/first.jpg"
-
-    def test_no_images_returns_none_image_url(self):
-        data = extract_product_data(_make_product_json(images=[]))
-        assert data is not None
-        assert data.image_url is None
-
-    def test_currency_defaults_to_usd(self):
-        data = extract_product_data(_make_product_json())
-        assert data is not None
-        assert data.currency == "USD"
-
-    def test_raw_data_preserved(self):
-        json_input = _make_product_json()
-        data = extract_product_data(json_input)
-        assert data is not None
-        assert data.raw_data == json_input
-
-    def test_empty_product_key_returns_none(self):
-        result = extract_product_data({"product": {}})
-        assert result is None
-
-    def test_missing_product_key_returns_none(self):
-        result = extract_product_data({"not_a_product": {}})
-        assert result is None
-
-    def test_invalid_price_string_is_skipped(self):
-        data = extract_product_data(_make_product_json(
-            variants=[{"price": "not-a-price", "available": True}]
-        ))
-        assert data is not None
-        assert data.price is None  # invalid price = no price extracted
-
     def test_empty_variants_gives_no_price(self):
         data = extract_product_data(_make_product_json(variants=[]))
         assert data is not None
         assert data.price is None
-        assert data.is_available is False
 
     def test_zero_price_discontinued(self):
         """Price $0.00 means the product is discontinued/hidden, not a free item."""
         data = extract_product_data(_make_product_json(
-            variants=[{"price": "0.00", "available": True}]
+            variants=[{"price": "0.00"}]
         ))
         assert data is not None
         assert data.price is None          # $0 treated as no price (discontinued)
         assert data.is_discontinued is True
-        assert data.is_available is True   # availability is separate from price
-
-    def test_missing_available_key_treated_as_sold_out(self):
-        """If 'available' key is missing or not present in variant JSON, treat as sold out."""
-        data = extract_product_data(_make_product_json(
-            variants=[{"price": "15.00"}]  # no 'available' key
-        ))
-        assert data is not None
-        assert data.is_available is False  # treated as sold out

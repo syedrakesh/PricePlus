@@ -101,7 +101,7 @@ export const storesApi = {
 export interface DiscoveredProduct {
   id: string; store_id: string; handle: string; product_url: string;
   title: string | null; current_price: number | null; compare_at_price: number | null;
-  currency: string; is_available: boolean; is_on_sale: boolean;
+  currency: string; is_on_sale: boolean;
   is_discontinued: boolean; image_url: string | null; is_tracked: boolean;
 }
 
@@ -109,7 +109,6 @@ export interface ProductFilters {
   q?: string;
   min_price?: number;
   max_price?: number;
-  is_available?: boolean;
 }
 
 export const productsApi = {
@@ -121,7 +120,6 @@ export const productsApi = {
     if (filters.q?.trim()) params.append('q', filters.q.trim());
     if (filters.min_price !== undefined) params.append('min_price', String(filters.min_price));
     if (filters.max_price !== undefined) params.append('max_price', String(filters.max_price));
-    if (filters.is_available !== undefined) params.append('is_available', String(filters.is_available));
 
     return request<{ products: DiscoveredProduct[]; total: number; page: number; page_size: number }>(
       `/stores/${storeId}/products?${params.toString()}`

@@ -32,17 +32,15 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
   const [searchQuery, setSearchQuery] = useState('');
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
-  const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock'>('all');
 
   const activeFilters = {
     q: searchQuery.trim() || undefined,
     min_price: minPrice ? parseFloat(minPrice) : undefined,
     max_price: maxPrice ? parseFloat(maxPrice) : undefined,
-    is_available: stockFilter === 'all' ? undefined : stockFilter === 'in_stock',
   };
 
   const { data, isLoading, mutate } = useSWR(
-    `store-products-${id}-${page}-${searchQuery}-${minPrice}-${maxPrice}-${stockFilter}`,
+    `store-products-${id}-${page}-${searchQuery}-${minPrice}-${maxPrice}`,
     () => productsApi.list(id, page, pageSize, activeFilters)
   );
 
@@ -80,11 +78,10 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     setSearchQuery('');
     setMinPrice('');
     setMaxPrice('');
-    setStockFilter('all');
     setPage(1);
   };
 
-  const hasActiveFilters = !!(searchQuery || minPrice || maxPrice || stockFilter !== 'all');
+  const hasActiveFilters = !!(searchQuery || minPrice || maxPrice);
   const tracked = data?.products.filter(p => p.is_tracked).length ?? 0;
   const total = data?.total ?? 0;
   const totalPages = data ? Math.ceil(data.total / pageSize) : 1;
@@ -161,19 +158,6 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
 
-              <select
-                value={stockFilter}
-                onChange={e => {
-                  setStockFilter(e.target.value as any);
-                  setPage(1);
-                }}
-                className={styles.filterSelect}
-              >
-                <option value="all">All Stock Statuses</option>
-                <option value="in_stock">In Stock Only</option>
-                <option value="out_of_stock">Out of Stock Only</option>
-              </select>
-
               {hasActiveFilters && (
                 <Button size="sm" variant="secondary" onClick={resetFilters}>
                   Clear Filters
@@ -223,12 +207,8 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
                       {product.is_on_sale && !product.is_discontinued && (
                         <Badge variant="danger">🏷️ Sale</Badge>
                       )}
-                      {product.is_discontinued ? (
+                      {product.is_discontinued && (
                         <Badge variant="warning">Discontinued</Badge>
-                      ) : (
-                        <Badge variant={product.is_available ? 'success' : 'warning'}>
-                          {product.is_available ? 'In stock' : 'Sold out'}
-                        </Badge>
                       )}
                     </div>
                   </div>

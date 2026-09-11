@@ -47,7 +47,6 @@ class ExtractedProductData:
     price: float | None
     compare_at_price: float | None  # Original price before sale; None if not on sale
     currency: str
-    is_available: bool
     is_discontinued: bool           # True when price == $0.00 (hidden/discontinued product)
     is_on_sale: bool                # True when compare_at_price > price
     image_url: str | None
@@ -76,10 +75,6 @@ def extract_product_data(json_response: dict) -> ExtractedProductData | None:
     - We take the MINIMUM variant price.
     - Price $0.00 → treated as discontinued (price=None, is_discontinued=True).
     - compare_at_price non-empty and > price → is_on_sale=True.
-
-    Availability rules (public Shopify storefront API):
-    - `available` boolean is present → use it directly.
-    - Fallback: inventory_qty > 0 or inventory_policy=="continue".
     """
     try:
         product = json_response.get("product", {})
@@ -95,32 +90,12 @@ def extract_product_data(json_response: dict) -> ExtractedProductData | None:
             t.strip() for t in tags_raw.split(",") if t.strip()
         ] if tags_raw else []
 
-        # Extract price and availability from variants
+        # Extract prices from variants
         variants = product.get("variants", [])
         min_price: float | None = None
         min_compare_at_price: float | None = None
-        is_available = False
 
         for variant in variants:
-            # ── Availability ──────────────────────────────────────────────────
-            # Shopify's storefront .json includes 'available' bool.
-            # If 'available' is missing/not found, treat as False (sold out).
-            if "available" in variant and variant["available"] is not None:
-                v_avail = bool(variant["available"])
-            else:
-                # Fallback for stores that expose inventory fields
-                inv_policy = variant.get("inventory_policy")
-                inv_qty = variant.get("inventory_quantity")
-
-                if inv_qty is not None:
-                    v_avail = inv_qty > 0 or inv_policy == "continue"
-                else:
-                    # Missing 'available' object -> treat as sold out (is_available = False)
-                    v_avail = False
-
-            if v_avail:
-                is_available = True
-
             # ── Current Price ─────────────────────────────────────────────────
             variant_price = _parse_price(variant.get("price"))
             if variant_price is not None:
@@ -159,8 +134,8 @@ def extract_product_data(json_response: dict) -> ExtractedProductData | None:
         currency = "USD"  # Shopify storefront .json does not expose currency in public API
 
         logger.debug(
-            "Extracted: title=%r price=%s compare_at=%s available=%s discontinued=%s on_sale=%s",
-            title, final_price, compare_at_price, is_available, is_discontinued, is_on_sale,
+            "Extracted: title=%r price=%s compare_at=%s discontinued=%s on_sale=%s",
+            title, final_price, compare_at_price, is_discontinued, is_on_sale,
         )
 
         return ExtractedProductData(
@@ -168,7 +143,6 @@ def extract_product_data(json_response: dict) -> ExtractedProductData | None:
             price=final_price,
             compare_at_price=compare_at_price,
             currency=currency,
-            is_available=is_available,
             is_discontinued=is_discontinued,
             is_on_sale=is_on_sale,
             image_url=image_url,

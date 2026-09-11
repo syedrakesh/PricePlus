@@ -150,7 +150,6 @@ class DiscoveredProduct(Base):
         comment="Original price before sale (Shopify compare_at_price); None if not on sale",
     )
     currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
-    is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_on_sale: Mapped[bool] = mapped_column(
         Boolean,
         default=False,

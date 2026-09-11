@@ -70,7 +70,6 @@ class DiscoveredProductResponse(BaseModel):
     current_price: float | None
     compare_at_price: float | None   # Original price; non-None = product is on sale
     currency: str
-    is_available: bool
     is_on_sale: bool
     is_discontinued: bool
     image_url: str | None
@@ -91,7 +90,6 @@ class DiscoveredProductResponse(BaseModel):
             current_price=float(product.current_price) if product.current_price is not None else None,
             compare_at_price=float(product.compare_at_price) if product.compare_at_price is not None else None,
             currency=product.currency,
-            is_available=product.is_available,
             is_on_sale=getattr(product, 'is_on_sale', False),
             is_discontinued=getattr(product, 'is_discontinued', False),
             image_url=product.image_url,

@@ -198,7 +198,6 @@ async def list_discovered_products(
     q: str | None = Query(default=None, description="Search by title or handle"),
     min_price: float | None = Query(default=None, ge=0, description="Minimum price"),
     max_price: float | None = Query(default=None, ge=0, description="Maximum price"),
-    is_available: bool | None = Query(default=None, description="Filter by stock availability"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -230,11 +229,6 @@ async def list_discovered_products(
     if max_price is not None:
         stmt = stmt.where(DiscoveredProduct.current_price <= max_price)
         count_stmt = count_stmt.where(DiscoveredProduct.current_price <= max_price)
-
-    # Apply is_available filter
-    if is_available is not None:
-        stmt = stmt.where(DiscoveredProduct.is_available == is_available)
-        count_stmt = count_stmt.where(DiscoveredProduct.is_available == is_available)
 
     # Execute count
     count_result = await db.execute(count_stmt)

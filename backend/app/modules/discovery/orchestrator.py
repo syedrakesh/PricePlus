@@ -380,7 +380,6 @@ async def _fetch_product_data_batch(
                         extracted.price,
                         extracted.compare_at_price,
                         extracted.currency,
-                        extracted.is_available,
                         extracted.is_on_sale,
                         extracted.is_discontinued,
                         extracted.image_url or product.image_url,
@@ -394,7 +393,7 @@ async def _fetch_product_data_batch(
                 if should_commit and pending_writes:
                     for (
                         handle, title, price, compare_at, currency,
-                        is_avail, is_on_sale, is_disc, img_url, raw
+                        is_on_sale, is_disc, img_url, raw
                     ) in pending_writes:
                         await db.execute(
                             update(DiscoveredProduct)
@@ -407,7 +406,6 @@ async def _fetch_product_data_batch(
                                 current_price=price,
                                 compare_at_price=compare_at,
                                 currency=currency,
-                                is_available=is_avail,
                                 is_on_sale=is_on_sale,
                                 is_discontinued=is_disc,
                                 image_url=img_url,
