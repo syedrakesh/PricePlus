@@ -38,6 +38,24 @@ class UserSettings(Base):
         nullable=False,
         comment="Maximum delay between requests in seconds",
     )
+    tracking_concurrency: Mapped[int] = mapped_column(
+        Integer,
+        default=5,
+        nullable=False,
+        comment="Parallel worker count for product monitoring check requests (1 to 10)",
+    )
+    tracking_min_delay: Mapped[float] = mapped_column(
+        Float,
+        default=0.2,
+        nullable=False,
+        comment="Minimum delay between product monitoring requests in seconds",
+    )
+    tracking_max_delay: Mapped[float] = mapped_column(
+        Float,
+        default=0.5,
+        nullable=False,
+        comment="Maximum delay between product monitoring requests in seconds",
+    )
     default_tracking_interval_minutes: Mapped[int] = mapped_column(
         Integer,
         default=360,

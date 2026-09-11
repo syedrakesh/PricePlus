@@ -6,6 +6,8 @@ import { monitoringApi } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import styles from './TrackingStatusBanner.module.css';
 
+import Link from 'next/link';
+
 interface TrackingStatusBannerProps {
   onPollComplete?: () => void;
 }
@@ -163,6 +165,12 @@ export function TrackingStatusBanner({ onPollComplete }: TrackingStatusBannerPro
         >
           {isRestarting ? 'Restarting…' : '🔄 Restart Service'}
         </Button>
+
+        <Link href="/settings?tab=tracking">
+          <Button size="sm" variant="secondary">
+            ⚙️ Speed Settings
+          </Button>
+        </Link>
       </div>
     </div>
   );

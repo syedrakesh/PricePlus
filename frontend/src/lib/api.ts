@@ -416,6 +416,9 @@ export interface UserSettings {
   discovery_concurrency: number;
   discovery_min_delay: number;
   discovery_max_delay: number;
+  tracking_concurrency: number;
+  tracking_min_delay: number;
+  tracking_max_delay: number;
   default_tracking_interval_minutes?: number;
   preferred_check_hour?: number;
   updated_at: string;
@@ -427,6 +430,9 @@ export const settingsApi = {
     discovery_concurrency?: number;
     discovery_min_delay?: number;
     discovery_max_delay?: number;
+    tracking_concurrency?: number;
+    tracking_min_delay?: number;
+    tracking_max_delay?: number;
     default_tracking_interval_minutes?: number;
     preferred_check_hour?: number;
   }) =>

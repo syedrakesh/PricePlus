@@ -139,11 +139,22 @@ async def _do_poll(
     error_message: str | None = None
     extracted = None
 
+    # Load user speed settings for randomized jitter request delay
+    import random
+    from app.modules.settings.models import UserSettings
+    us_res = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == tracked.user_id)
+    )
+    u_settings = us_res.scalar_one_or_none()
+    min_d = u_settings.tracking_min_delay if u_settings else 0.2
+    max_d = u_settings.tracking_max_delay if u_settings else 0.5
+    req_delay = random.uniform(min_d, max_d)
+
     try:
         json_data = await fetch_product_json(
             store_url=store_url,
             handle=discovered.handle,
-            rate_limit_delay=0.1,
+            rate_limit_delay=req_delay,
         )
         if json_data is not None:
             extracted = extract_product_data(json_data)

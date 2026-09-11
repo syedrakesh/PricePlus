@@ -45,7 +45,7 @@ async def get_user_settings(
 ) -> UserSettingsResponse:
     """
     Get discovery rate and concurrency settings for the current user.
-    Creates default settings (concurrency=2, min_delay=0.8s, max_delay=1.5s) if not configured yet.
+    Creates default settings if not configured yet.
     """
     user_id = uuid.UUID(user_id_str)
     settings = await _get_or_create_settings(db, user_id)
@@ -54,6 +54,9 @@ async def get_user_settings(
         discovery_concurrency=settings.discovery_concurrency,
         discovery_min_delay=settings.discovery_min_delay,
         discovery_max_delay=settings.discovery_max_delay,
+        tracking_concurrency=settings.tracking_concurrency,
+        tracking_min_delay=settings.tracking_min_delay,
+        tracking_max_delay=settings.tracking_max_delay,
         updated_at=settings.updated_at.isoformat(),
     )
 
@@ -65,7 +68,7 @@ async def update_user_settings(
     user_id_str: str = Depends(get_current_user_id),
 ) -> UserSettingsResponse:
     """
-    Update discovery rate and concurrency settings for the current user.
+    Update discovery rate, tracking rate, and concurrency settings for the current user.
     """
     user_id = uuid.UUID(user_id_str)
     settings = await _get_or_create_settings(db, user_id)
@@ -76,15 +79,22 @@ async def update_user_settings(
         settings.discovery_min_delay = data.discovery_min_delay
     if data.discovery_max_delay is not None:
         settings.discovery_max_delay = data.discovery_max_delay
+    if data.tracking_concurrency is not None:
+        settings.tracking_concurrency = data.tracking_concurrency
+    if data.tracking_min_delay is not None:
+        settings.tracking_min_delay = data.tracking_min_delay
+    if data.tracking_max_delay is not None:
+        settings.tracking_max_delay = data.tracking_max_delay
 
     settings.updated_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(settings)
 
     logger.info(
-        "Updated discovery settings for user %s: concurrency=%d, delay=%.1f-%.1fs",
+        "Updated settings for user %s: discovery=(c=%d, d=%.1f-%.1fs), tracking=(c=%d, d=%.2f-%.2fs)",
         user_id, settings.discovery_concurrency,
         settings.discovery_min_delay, settings.discovery_max_delay,
+        settings.tracking_concurrency, settings.tracking_min_delay, settings.tracking_max_delay,
     )
 
     return UserSettingsResponse(
@@ -92,5 +102,8 @@ async def update_user_settings(
         discovery_concurrency=settings.discovery_concurrency,
         discovery_min_delay=settings.discovery_min_delay,
         discovery_max_delay=settings.discovery_max_delay,
+        tracking_concurrency=settings.tracking_concurrency,
+        tracking_min_delay=settings.tracking_min_delay,
+        tracking_max_delay=settings.tracking_max_delay,
         updated_at=settings.updated_at.isoformat(),
     )
