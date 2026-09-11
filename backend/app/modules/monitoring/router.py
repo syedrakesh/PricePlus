@@ -10,6 +10,7 @@ Endpoints:
 All endpoints require authentication and enforce ownership.
 """
 
+from datetime import UTC, datetime
 import logging
 import uuid
 
@@ -39,10 +40,37 @@ router = APIRouter()
 
 @router.get("/monitoring/engine/status")
 async def get_monitoring_engine_status(
+    db: AsyncSession = Depends(get_db),
     user_id_str: str = Depends(get_current_user_id),
 ):
-    """Return status and telemetry of the background price monitoring engine."""
-    return monitoring_engine.get_status_dict()
+    """Return status and telemetry of the background price monitoring engine with user plan info."""
+    user_id = uuid.UUID(user_id_str)
+    status = monitoring_engine.get_status_dict()
+
+    from app.modules.billing.entitlements import EntitlementService
+    user_plan = await EntitlementService.get_user_active_plan(user_id, db)
+    plan_poll_interval_mins = user_plan.poll_interval_mins if user_plan else 60
+
+    res = await db.execute(
+        select(func.min(TrackedProduct.next_check_at)).where(
+            TrackedProduct.user_id == user_id,
+            TrackedProduct.is_active.is_(True),
+        )
+    )
+    earliest_next_check = res.scalar()
+
+    now = datetime.now(UTC)
+    seconds_until_next_product_check = None
+    if earliest_next_check:
+        if earliest_next_check.tzinfo is None:
+            earliest_next_check = earliest_next_check.replace(tzinfo=UTC)
+        seconds_until_next_product_check = max(0, int((earliest_next_check - now).total_seconds()))
+
+    status["user_plan_poll_interval_mins"] = plan_poll_interval_mins
+    status["seconds_until_next_product_check"] = seconds_until_next_product_check
+    status["earliest_next_check_at"] = earliest_next_check.isoformat() if earliest_next_check else None
+
+    return status
 
 
 @router.post("/monitoring/engine/trigger")

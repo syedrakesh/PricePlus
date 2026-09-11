@@ -62,6 +62,25 @@ export function TrackingStatusBanner({ onPollComplete }: TrackingStatusBannerPro
     else lastRunText = `${Math.floor(elapsedSec / 60)}m ago`;
   }
 
+  // Format user plan interval
+  const planMins = status?.user_plan_poll_interval_mins ?? 60;
+  const planText = planMins === 1 ? '1 min' : `${planMins} mins`;
+
+  // Format next product check countdown
+  let nextCheckText = `in ~${status?.seconds_until_next_run ?? 0}s`;
+  if (status?.seconds_until_next_product_check != null) {
+    const s = status.seconds_until_next_product_check;
+    if (s <= 0) {
+      nextCheckText = 'Due now';
+    } else if (s < 60) {
+      nextCheckText = `in ~${s}s`;
+    } else {
+      const m = Math.floor(s / 60);
+      const remSec = s % 60;
+      nextCheckText = remSec > 0 ? `in ~${m}m ${remSec}s` : `in ~${m}m`;
+    }
+  }
+
   return (
     <div
       className={[
@@ -99,15 +118,17 @@ export function TrackingStatusBanner({ onPollComplete }: TrackingStatusBannerPro
           </div>
 
           <div className={styles.meta}>
+            <span>Plan Interval: <strong>Every {planText}</strong></span>
+            <span className={styles.metaDot}>•</span>
             <span>Last poll: <strong>{lastRunText}</strong></span>
             <span className={styles.metaDot}>•</span>
-            <span>Next poll in ~<strong>{status?.seconds_until_next_run ?? 0}s</strong></span>
+            <span>Next product check: <strong>{nextCheckText}</strong></span>
             <span className={styles.metaDot}>•</span>
             <span>Cycles: {status?.total_cycles_run ?? 0}</span>
             {status?.last_polled_count != null && status.last_polled_count > 0 && (
               <>
                 <span className={styles.metaDot}>•</span>
-                <span>Last checked: {status.last_polled_count} products ({status.last_changes_count} changes)</span>
+                <span>Last batch: {status.last_polled_count} checked ({status.last_changes_count} changes)</span>
               </>
             )}
           </div>

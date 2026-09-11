@@ -194,6 +194,9 @@ export interface MonitoringEngineStatus {
   last_changes_count: number;
   last_error_count: number;
   last_error_message: string | null;
+  user_plan_poll_interval_mins?: number;
+  seconds_until_next_product_check?: number | null;
+  earliest_next_check_at?: string | null;
 }
 
 export const monitoringApi = {
