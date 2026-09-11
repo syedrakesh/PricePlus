@@ -104,6 +104,9 @@ export default function TrackingPage() {
                         }}
                       >
                         <option value="">Default Interval</option>
+                        <option value="1">⚡ 1 Minute (Realtime VIP)</option>
+                        <option value="5">⚡ 5 Minutes (Turbo)</option>
+                        <option value="15">15 Minutes</option>
                         <option value="60">1 Hour (Enterprise)</option>
                         <option value="360">6 Hours (Pro)</option>
                         <option value="1440">24 Hours (Free)</option>

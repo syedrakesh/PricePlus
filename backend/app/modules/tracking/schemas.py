@@ -27,7 +27,7 @@ class UpdateTrackedProductRequest(BaseModel):
     """Request body for updating tracked product frequency or priority status."""
 
     tracking_interval_minutes: int | None = Field(
-        default=None, ge=15, description="Custom check interval in minutes (None = reset to user default)"
+        default=None, ge=1, description="Custom check interval in minutes (None = reset to user default)"
     )
     is_priority: bool | None = Field(
         default=None, description="Set VIP priority status for high-frequency monitoring"

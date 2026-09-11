@@ -44,7 +44,7 @@ class CreatePlanRequest(BaseModel):
     price_usd: float = Field(default=0.0, ge=0)
     max_stores: int = Field(default=1, ge=1)
     max_tracked_products: int = Field(default=10, ge=1)
-    poll_interval_mins: int = Field(default=1440, ge=15)
+    poll_interval_mins: int = Field(default=1440, ge=1)
     max_priority_products: int = Field(default=0, ge=0)
     is_active: bool = True
     is_public: bool = True
@@ -57,7 +57,7 @@ class UpdatePlanRequest(BaseModel):
     price_usd: float | None = Field(default=None, ge=0)
     max_stores: int | None = Field(default=None, ge=1)
     max_tracked_products: int | None = Field(default=None, ge=1)
-    poll_interval_mins: int | None = Field(default=None, ge=15)
+    poll_interval_mins: int | None = Field(default=None, ge=1)
     max_priority_products: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
     is_public: bool | None = None
