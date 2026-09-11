@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { trackingApi, billingApi } from '@/lib/api';
+import { trackingApi, billingApi, Plan } from '@/lib/api';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -9,10 +9,48 @@ import { EmptyState, PageLoader } from '@/components/ui/Spinner';
 import Link from 'next/link';
 import styles from './page.module.css';
 
+function formatMins(mins: number): string {
+  if (mins === 1) return '1 Minute (Realtime VIP)';
+  if (mins < 60) return `${mins} Minutes`;
+  if (mins === 60) return '1 Hour';
+  if (mins % 1440 === 0) {
+    const days = mins / 1440;
+    return `${days} ${days === 1 ? 'Day (24 Hours)' : 'Days'}`;
+  }
+  if (mins % 60 === 0) return `${mins / 60} Hours`;
+  return `${mins} Mins`;
+}
+
 export default function TrackingPage() {
   const { data, isLoading, mutate } = useSWR('tracking', () => trackingApi.list());
   const { data: usage } = useSWR('billing-usage', billingApi.getUsage);
-  const minInterval = usage?.min_poll_interval_mins ?? 1440;
+  const { data: dbPlans } = useSWR('public-plans', billingApi.plans);
+
+  const userMinInterval = usage?.min_poll_interval_mins ?? 1440;
+  const userPlanName = usage?.plan_name ?? 'Plan';
+
+  // Build unique intervals list dynamically from DB plans + standard fallback intervals
+  const intervalMap = new Map<number, string>();
+  
+  if (dbPlans && dbPlans.length > 0) {
+    // Sort plans by poll_interval_mins ascending
+    const sortedPlans = [...dbPlans].sort((a, b) => a.poll_interval_mins - b.poll_interval_mins);
+    for (const plan of sortedPlans) {
+      if (!intervalMap.has(plan.poll_interval_mins)) {
+        intervalMap.set(plan.poll_interval_mins, plan.name);
+      }
+    }
+  }
+
+  // Ensure standard intervals are present for down-throttling options
+  const fallbackIntervals = [1, 5, 15, 60, 180, 360, 1440];
+  for (const interval of fallbackIntervals) {
+    if (!intervalMap.has(interval)) {
+      intervalMap.set(interval, '');
+    }
+  }
+
+  const allIntervals = Array.from(intervalMap.entries()).sort((a, b) => a[0] - b[0]);
 
   async function handleTogglePriority(item: any) {
     try {
@@ -105,23 +143,20 @@ export default function TrackingPage() {
                           fontSize: '0.75rem',
                         }}
                       >
-                        <option value="">Default Plan Interval</option>
-                        <option value="1" disabled={1 < minInterval}>
-                          {1 < minInterval ? '🔒 1 Minute (Enterprise)' : '⚡ 1 Minute (Realtime VIP)'}
+                        <option value="">
+                          Default ({userPlanName} — {formatMins(userMinInterval)})
                         </option>
-                        <option value="5" disabled={5 < minInterval}>
-                          {5 < minInterval ? '🔒 5 Minutes (Enterprise)' : '⚡ 5 Minutes (Turbo)'}
-                        </option>
-                        <option value="15" disabled={15 < minInterval}>
-                          {15 < minInterval ? '🔒 15 Minutes (Pro)' : '15 Minutes'}
-                        </option>
-                        <option value="60" disabled={60 < minInterval}>
-                          {60 < minInterval ? '🔒 1 Hour (Pro)' : '1 Hour'}
-                        </option>
-                        <option value="360" disabled={360 < minInterval}>
-                          {360 < minInterval ? '🔒 6 Hours' : '6 Hours'}
-                        </option>
-                        <option value="1440">24 Hours (Free)</option>
+                        {allIntervals.map(([mins, planName]) => {
+                          const isTooFast = mins < userMinInterval;
+                          const tag = planName ? ` (${planName})` : '';
+                          return (
+                            <option key={mins} value={mins} disabled={isTooFast}>
+                              {isTooFast
+                                ? `🔒 ${formatMins(mins)}${tag}`
+                                : `${formatMins(mins)}${tag}`}
+                            </option>
+                          );
+                        })}
                       </select>
 
                       <Button

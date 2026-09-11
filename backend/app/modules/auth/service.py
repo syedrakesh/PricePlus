@@ -53,10 +53,29 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> TokenRespons
         is_active=True,
     )
     db.add(user)
+    await db.flush()
+
+    # Automatically create default Free plan subscription for new user
+    from app.modules.billing.models import Plan, Subscription
+    free_plan_res = await db.execute(select(Plan).where(Plan.slug == "free"))
+    free_plan = free_plan_res.scalars().first()
+    if not free_plan:
+        any_plan_res = await db.execute(select(Plan).order_by(Plan.price_usd.asc()))
+        free_plan = any_plan_res.scalars().first()
+
+    if free_plan:
+        sub = Subscription(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            plan_id=free_plan.id,
+            status="active",
+        )
+        db.add(sub)
+
     await db.commit()
     await db.refresh(user)
 
-    logger.info("User registered", extra={"user_id": str(user.id)})
+    logger.info("User registered with default subscription", extra={"user_id": str(user.id)})
 
     return TokenResponse(
         access_token=create_access_token(str(user.id)),
