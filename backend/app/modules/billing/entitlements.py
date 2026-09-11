@@ -40,30 +40,35 @@ class EntitlementService:
 
     @staticmethod
     async def get_user_active_plan(user_id: uuid.UUID, db: AsyncSession) -> Plan:
-        """Fetch active plan for user, falling back to Free Plan if none assigned."""
+        """
+        Fetch the highest-value active plan for a user.
+
+        Checks subscriptions with status 'active' OR 'trialing'.
+        Falls back to the Free plan DB record if no active subscription is found.
+        """
         stmt = (
             select(Plan)
             .join(Subscription, Subscription.plan_id == Plan.id)
             .where(
                 Subscription.user_id == user_id,
-                Subscription.status == "active",
+                Subscription.status.in_(["active", "trialing"]),
             )
-            .order_by(Plan.price_usd.desc())
+            .order_by(Plan.price_usd.desc())  # pick highest-value plan if multiple
         )
         result = await db.execute(stmt)
         plan = result.scalars().first()
 
         if not plan:
-            # Fallback to default Free plan
+            # Fallback to Free plan from DB (preserves admin-managed limits)
             free_stmt = select(Plan).where(Plan.slug == "free")
             free_res = await db.execute(free_stmt)
             plan = free_res.scalars().first()
 
-            if not plan:
-                # Fallback if slug free missing
-                any_stmt = select(Plan).order_by(Plan.price_usd.asc())
-                any_res = await db.execute(any_stmt)
-                plan = any_res.scalars().first()
+        if not plan:
+            # Last-resort: cheapest available plan
+            any_stmt = select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price_usd.asc())
+            any_res = await db.execute(any_stmt)
+            plan = any_res.scalars().first()
 
         if not plan:
             raise HTTPException(

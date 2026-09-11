@@ -213,16 +213,56 @@ export const alertsApi = {
 // ─── Billing & Subscriptions ─────────────────────────────────────────────────
 
 export interface Plan {
-  id: string; name: string; slug?: string; price_usd: number | null;
-  max_stores: number; max_tracked_products: number; poll_interval_mins: number;
-  max_priority_products?: number; is_active: boolean; is_public?: boolean;
+  id: string;
+  name: string;
+  slug?: string;
+  price_usd: number | null;
+  stripe_price_id?: string | null;
+  max_stores: number;
+  max_tracked_products: number;
+  poll_interval_mins: number;
+  max_priority_products?: number;
+  is_active: boolean;
+  is_public?: boolean;
   features?: Record<string, any>;
 }
 
+export interface SubscriptionPlanInfo {
+  id: string;
+  name: string;
+  slug: string;
+  price_usd: number;
+  max_stores: number;
+  max_tracked_products: number;
+  poll_interval_mins: number;
+  max_priority_products: number;
+  features?: Record<string, any>;
+}
+
+export interface Subscription {
+  id: string;
+  plan_id: string;
+  plan: SubscriptionPlanInfo | null;
+  status: 'active' | 'trialing' | 'past_due' | 'canceled' | string;
+  status_label: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  current_period_end: string | null;
+  created_at: string;
+  /** True when subscription is managed directly in DB (no Stripe) */
+  is_direct: boolean;
+}
+
 export interface Entitlements {
-  plan_name: string; max_stores: number; current_stores: number;
-  max_tracked_products: number; current_tracked_products: number;
-  poll_interval_mins: number; subscription_status: string;
+  plan_name: string;
+  plan_slug: string;
+  plan_id: string;
+  max_stores: number;
+  current_stores: number;
+  max_tracked_products: number;
+  current_tracked_products: number;
+  poll_interval_mins: number;
+  subscription_status: string;
 }
 
 export interface UserUsageSummary {
@@ -236,12 +276,21 @@ export interface UserUsageSummary {
 export const billingApi = {
   plans: () => request<Plan[]>('/billing/plans'),
   getUsage: () => request<UserUsageSummary>('/billing/usage'),
-  subscription: () => request<{ plan: Plan; status: string; current_period_end: string | null } | null>('/billing/subscription'),
+  subscription: () => request<Subscription | null>('/billing/subscription'),
   entitlements: () => request<Entitlements>('/billing/entitlements'),
   checkout: (planId: string, successUrl: string, cancelUrl: string) =>
     request<{ checkout_url: string }>('/billing/checkout', {
       method: 'POST',
       body: JSON.stringify({ plan_id: planId, success_url: successUrl, cancel_url: cancelUrl }),
+    }),
+  downgrade: (planId: string) =>
+    request<Subscription>('/billing/downgrade', {
+      method: 'POST',
+      body: JSON.stringify({ plan_id: planId }),
+    }),
+  cancel: () =>
+    request<{ message: string; current_period_end: string | null }>('/billing/cancel', {
+      method: 'POST',
     }),
   portal: (returnUrl: string) =>
     request<{ portal_url: string }>('/billing/portal', {
@@ -249,12 +298,37 @@ export const billingApi = {
     }),
 };
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  created_at: string;
+  plan_name: string;
+  plan_slug: string | null;
+  plan_id: string | null;
+  subscription_status: string;
+}
+
 export const adminApi = {
+  // Plans
   listPlans: () => request<Plan[]>('/billing/admin/plans'),
   createPlan: (data: Partial<Plan>) =>
     request<Plan>('/billing/admin/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan: (id: string, data: Partial<Plan>) =>
     request<Plan>(`/billing/admin/plans/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  assignUserPlan: (userId: string, planId: string, note?: string) =>
+    request<Subscription>(`/billing/admin/users/${userId}/subscription`, {
+      method: 'PUT',
+      body: JSON.stringify({ plan_id: planId, note: note ?? null }),
+    }),
+  // Users
+  listUsers: () => request<AdminUser[]>('/auth/admin/users'),
+  toggleUserStatus: (userId: string) =>
+    request<{ id: string; email: string; is_active: boolean; created_at: string }>(
+      `/auth/admin/users/${userId}/status`,
+      { method: 'PATCH' }
+    ),
 };
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

@@ -63,3 +63,18 @@ class UserResponse(BaseModel):
     created_at: str
 
     model_config = {"from_attributes": True}
+
+
+class AdminUserResponse(BaseModel):
+    """Extended user response for superadmin — includes subscription/plan info."""
+    id: str
+    email: str
+    is_active: bool
+    is_superuser: bool
+    created_at: str
+    plan_name: str
+    plan_slug: str | None = None
+    plan_id: str | None = None
+    subscription_status: str
+
+    model_config = {"from_attributes": True}

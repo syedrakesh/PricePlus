@@ -274,6 +274,8 @@ class TestEntitlementSchema:
         from app.modules.billing.schemas import EntitlementResponse
         r = EntitlementResponse(
             plan_name="starter",
+            plan_slug="starter",
+            plan_id="00000000-0000-0000-0000-000000000001",
             max_stores=5,
             current_stores=2,
             max_tracked_products=100,
@@ -282,6 +284,7 @@ class TestEntitlementSchema:
             subscription_status="active",
         )
         assert r.plan_name == "starter"
+        assert r.plan_slug == "starter"
         assert r.current_stores == 2
         assert r.max_tracked_products == 100
 

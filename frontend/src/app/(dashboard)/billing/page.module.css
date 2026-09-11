@@ -109,3 +109,58 @@
   color: var(--color-accent);
   font-weight: 500;
 }
+
+/* ─── Status banners ─────────────────────────────────────────────────────── */
+
+.warningBanner {
+  padding: var(--space-4) var(--space-5);
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: var(--radius);
+  color: #fbbf24;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.infoBanner {
+  padding: var(--space-4) var(--space-5);
+  background: rgba(56,189,248,0.08);
+  border: 1px solid rgba(56,189,248,0.25);
+  border-radius: var(--radius);
+  color: #7dd3fc;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+/* ─── Toast notifications ─────────────────────────────────────────────────── */
+
+.toastSuccess, .toastError {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 9999;
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  max-width: 380px;
+  animation: slideUp 0.3s ease both;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.toastSuccess {
+  background: rgba(16,185,129,0.15);
+  border: 1px solid rgba(16,185,129,0.3);
+  color: #6ee7b7;
+}
+
+.toastError {
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: #fca5a5;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}

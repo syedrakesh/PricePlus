@@ -13,6 +13,7 @@ const NAV = [
   { href: '/billing',     label: 'Billing',    icon: '💳' },
   { href: '/settings',    label: 'Settings',   icon: '⚙️' },
   { href: '/admin/plans', label: 'Admin Plans', icon: '👑' },
+  { href: '/admin/users', label: 'Admin Users', icon: '👥' },
 ];
 
 export function Sidebar() {

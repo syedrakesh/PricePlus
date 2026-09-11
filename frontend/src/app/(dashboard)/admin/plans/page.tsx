@@ -1,15 +1,164 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import useSWR from 'swr';
-import { adminApi, Plan } from '@/lib/api';
+import { adminApi, Plan, AdminUser } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import styles from './page.module.css';
 
+// ─── User Subscription Management ─────────────────────────────────────────────
+
+function UserSubManager({ plans, users }: { plans: Plan[]; users: AdminUser[] }) {
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [note, setNote] = useState('');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const filteredUsers = useMemo(() =>
+    users.filter(u => u.email.toLowerCase().includes(search.toLowerCase())),
+    [users, search]
+  );
+
+  const selectedUser = users.find(u => u.id === selectedUserId);
+
+  async function handleAssign(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedUserId || !selectedPlanId) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const sub = await adminApi.assignUserPlan(selectedUserId, selectedPlanId, note || undefined);
+      const plan = plans.find(p => p.id === selectedPlanId);
+      setResult({ ok: true, msg: `✅ Assigned "${plan?.name ?? selectedPlanId}" to ${selectedUser?.email}` });
+      setSelectedUserId('');
+      setSelectedPlanId('');
+      setNote('');
+      setSearch('');
+    } catch (err: any) {
+      setResult({ ok: false, msg: `❌ ${err.message || 'Failed to assign plan'}` });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <h3>🎯 Assign Plan to User</h3>
+        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Manually override any user's subscription</span>
+      </CardHeader>
+      <CardBody>
+        <form onSubmit={handleAssign} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+
+            {/* User search + dropdown */}
+            <div className={styles.inputGroup} style={{ position: 'relative' }}>
+              <label className={styles.label}>Select User</label>
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="Search by email…"
+                value={search || selectedUser?.email || ''}
+                onChange={e => { setSearch(e.target.value); setSelectedUserId(''); }}
+                onFocus={e => e.target.select()}
+              />
+              {search && filteredUsers.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+                  background: '#0f172a', border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: 8, maxHeight: 220, overflowY: 'auto', marginTop: 4,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                }}>
+                  {filteredUsers.map(u => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => { setSelectedUserId(u.id); setSearch(''); }}
+                      style={{
+                        width: '100%', textAlign: 'left', background: 'transparent',
+                        border: 'none', padding: '0.6rem 0.75rem', cursor: 'pointer',
+                        color: '#e2e8f0', fontSize: '0.875rem', display: 'flex',
+                        justifyContent: 'space-between', alignItems: 'center',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(56,189,248,0.08)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <span>{u.email}</span>
+                      <span style={{ fontSize: '0.7rem', color: '#64748b', fontFamily: 'monospace' }}>
+                        {u.plan_slug ?? 'free'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedUser && (
+                <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Badge variant="accent" style={{ fontSize: '0.7rem' }}>{selectedUser.email}</Badge>
+                  <Badge variant={selectedUser.is_active ? 'success' : 'danger'} style={{ fontSize: '0.7rem' }}>
+                    {selectedUser.is_active ? 'Active' : 'Inactive'}
+                  </Badge>
+                  <Badge variant="default" style={{ fontSize: '0.7rem' }}>
+                    {selectedUser.plan_name}
+                  </Badge>
+                </div>
+              )}
+            </div>
+
+            {/* Plan dropdown */}
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Target Plan</label>
+              <select
+                className={styles.input}
+                value={selectedPlanId}
+                onChange={e => setSelectedPlanId(e.target.value)}
+                required
+              >
+                <option value="">— Select Plan —</option>
+                {plans.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.slug}) — ${p.price_usd?.toFixed(2) ?? '0.00'}/mo
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Internal Note (optional)</label>
+            <input
+              type="text"
+              className={styles.input}
+              placeholder="e.g. Manual comp, refund, testing..."
+              value={note}
+              onChange={e => setNote(e.target.value)}
+            />
+          </div>
+
+          {result && (
+            <Badge variant={result.ok ? 'success' : 'danger'}>{result.msg}</Badge>
+          )}
+
+          <div>
+            <Button type="submit" variant="primary" disabled={loading || !selectedUserId || !selectedPlanId}>
+              {loading ? 'Assigning…' : 'Assign Plan'}
+            </Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function AdminPlansPage() {
   const { data: plans, error, mutate, isLoading } = useSWR('admin-plans', adminApi.listPlans);
+  const { data: users = [] } = useSWR('admin-users', adminApi.listUsers);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -95,6 +244,9 @@ export default function AdminPlansPage() {
         </Badge>
       )}
 
+      {/* User Subscription Assignment */}
+      {plans && <UserSubManager plans={plans} users={users} />}
+
       {/* Editor Modal / Form */}
       {(isCreating || editingPlan) && (
         <Card>
@@ -135,6 +287,17 @@ export default function AdminPlansPage() {
                   value={formData.price_usd ?? 0}
                   onChange={e => setFormData({ ...formData, price_usd: parseFloat(e.target.value) || 0 })}
                   required
+                />
+              </div>
+
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Stripe Price ID (Optional for Live Billing)</label>
+                <input
+                  type="text"
+                  placeholder="price_1P..."
+                  className={styles.input}
+                  value={formData.stripe_price_id || ''}
+                  onChange={e => setFormData({ ...formData, stripe_price_id: e.target.value || undefined })}
                 />
               </div>
 
