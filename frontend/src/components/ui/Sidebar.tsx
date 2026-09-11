@@ -1,29 +1,37 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { clearTokens } from '@/lib/auth';
+import { usePathname } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import styles from './Sidebar.module.css';
 
-const NAV = [
-  { href: '/',         label: 'Dashboard',  icon: '⬛' },
-  { href: '/stores',   label: 'Stores',     icon: '🏪' },
-  { href: '/tracking', label: 'Products',   icon: '📦' },
-  { href: '/alerts',   label: 'Alerts',     icon: '🔔' },
-  { href: '/billing',     label: 'Billing',    icon: '💳' },
-  { href: '/settings',    label: 'Settings',   icon: '⚙️' },
-  { href: '/admin/plans', label: 'Admin Plans', icon: '👑' },
-  { href: '/admin/users', label: 'Admin Users', icon: '👥' },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  permission?: string;
+}
+
+const NAV: NavItem[] = [
+  { href: '/',               label: 'Dashboard',   icon: '⬛' },
+  { href: '/stores',         label: 'Stores',      icon: '🏪', permission: 'manage_stores' },
+  { href: '/tracking',       label: 'Products',    icon: '📦', permission: 'manage_tracking' },
+  { href: '/alerts',         label: 'Alerts',      icon: '🔔', permission: 'manage_alerts' },
+  { href: '/billing',        label: 'Billing',     icon: '💳', permission: 'manage_billing' },
+  { href: '/settings',       label: 'Settings',    icon: '⚙️' },
+  { href: '/admin/plans',    label: 'Admin Plans', icon: '👑', permission: 'access_admin' },
+  { href: '/admin/users',    label: 'Admin Users', icon: '👥', permission: 'access_admin' },
+  { href: '/admin/permissions', label: 'RBAC Matrix', icon: '🔒', permission: 'access_admin' },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { user, logout, hasPermission } = useAuth();
 
-  function handleLogout() {
-    clearTokens();
-    router.push('/login');
-  }
+  const visibleNav = NAV.filter(item => {
+    if (!item.permission) return true;
+    return hasPermission(item.permission);
+  });
 
   return (
     <aside className={styles.sidebar}>
@@ -33,7 +41,7 @@ export function Sidebar() {
       </div>
 
       <nav className={styles.nav}>
-        {NAV.map(item => {
+        {visibleNav.map(item => {
           const active = item.href === '/'
             ? pathname === '/'
             : pathname.startsWith(item.href);
@@ -51,7 +59,17 @@ export function Sidebar() {
       </nav>
 
       <div className={styles.footer}>
-        <button className={styles.logout} onClick={handleLogout}>
+        {user && (
+          <div className={styles.userProfile}>
+            <span className={styles.userEmail}>{user.email}</span>
+            <div className={styles.userRoleRow}>
+              <span className={styles.userBadge}>
+                {user.is_superuser ? 'SuperAdmin' : (user.role_name || 'Standard User')}
+              </span>
+            </div>
+          </div>
+        )}
+        <button className={styles.logout} onClick={logout}>
           <span>↩</span> Sign out
         </button>
       </div>

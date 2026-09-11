@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import useSWR, { mutate as globalMutate } from 'swr';
-import { adminApi, AdminUser } from '@/lib/api';
+import useSWR from 'swr';
+import { adminApi, AdminUser, RoleItem } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -15,10 +15,6 @@ const PLAN_SLUG_COLOR: Record<string, string> = {
   pro:        '#38bdf8',
   enterprise: '#818cf8',
 };
-
-function planColor(slug: string | null) {
-  return PLAN_SLUG_COLOR[slug ?? 'free'] ?? '#94a3b8';
-}
 
 function planVariant(slug: string | null): 'default' | 'success' | 'accent' | 'info' {
   if (slug === 'enterprise') return 'accent';
@@ -37,16 +33,36 @@ function subStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'i
 
 // ─── User Row ─────────────────────────────────────────────────────────────────
 
-function UserRow({ user, onToggleStatus }: {
+function UserRow({
+  user,
+  roles,
+  onToggleStatus,
+  onUpdateRole,
+}: {
   user: AdminUser;
+  roles: RoleItem[];
   onToggleStatus: (id: string) => Promise<void>;
+  onUpdateRole: (userId: string, roleSlug: string) => Promise<void>;
 }) {
   const [toggling, setToggling] = useState(false);
+  const [updatingRole, setUpdatingRole] = useState(false);
 
   async function handleToggle() {
     setToggling(true);
     await onToggleStatus(user.id);
     setToggling(false);
+  }
+
+  async function handleRoleSelect(e: React.ChangeEvent<HTMLSelectElement>) {
+    const newRoleSlug = e.target.value;
+    setUpdatingRole(true);
+    try {
+      await onUpdateRole(user.id, newRoleSlug);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update role');
+    } finally {
+      setUpdatingRole(false);
+    }
   }
 
   const joinedDate = new Date(user.created_at).toLocaleDateString('en-US', {
@@ -70,8 +86,22 @@ function UserRow({ user, onToggleStatus }: {
         <Badge variant={user.is_active ? 'success' : 'danger'}>
           {user.is_active ? 'Active' : 'Inactive'}
         </Badge>
-        {user.is_superuser && (
-          <Badge variant="accent" style={{ marginLeft: 6 }}>Admin</Badge>
+      </td>
+      <td className={styles.td}>
+        {user.is_superuser ? (
+          <Badge variant="accent">SuperAdmin</Badge>
+        ) : (
+          <select
+            value={user.role_slug || 'user'}
+            onChange={handleRoleSelect}
+            disabled={updatingRole}
+            className={styles.input}
+            style={{ padding: '2px 6px', fontSize: '0.8rem' }}
+          >
+            {roles.map(r => (
+              <option key={r.id} value={r.slug}>{r.name}</option>
+            ))}
+          </select>
         )}
       </td>
       <td className={styles.td}>
@@ -108,17 +138,24 @@ function UserRow({ user, onToggleStatus }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminUsersPage() {
-  const { data: users, isLoading, mutate } = useSWR('admin-users', adminApi.listUsers);
+  const { data: users, isLoading: loadingUsers, mutate: mutateUsers } = useSWR('admin-users', adminApi.listUsers);
+  const { data: roles = [], isLoading: loadingRoles } = useSWR('admin-roles', adminApi.listRoles);
+
   const [search, setSearch] = useState('');
   const [filterPlan, setFilterPlan] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
   async function handleToggleStatus(userId: string) {
     await adminApi.toggleUserStatus(userId);
-    await mutate();
+    await mutateUsers();
   }
 
-  if (isLoading) return <PageLoader />;
+  async function handleUpdateRole(userId: string, roleSlug: string) {
+    await adminApi.updateUserRole(userId, roleSlug);
+    await mutateUsers();
+  }
+
+  if (loadingUsers || loadingRoles) return <PageLoader />;
 
   const planSlugs = [...new Set((users ?? []).map(u => u.plan_slug ?? 'free'))];
 
@@ -139,7 +176,7 @@ export default function AdminUsersPage() {
         <div>
           <h1 className={styles.title}>👥 User Management</h1>
           <p className={styles.subtitle}>
-            View and manage all registered users, their subscription plans, and account status.
+            View and manage all registered users, assign system roles, subscription plans, and account status.
           </p>
         </div>
       </div>
@@ -235,6 +272,7 @@ export default function AdminUsersPage() {
                   <tr>
                     <th className={styles.th}>User</th>
                     <th className={styles.th}>Status</th>
+                    <th className={styles.th}>Role</th>
                     <th className={styles.th}>Plan</th>
                     <th className={styles.th}>Sub Status</th>
                     <th className={styles.th}>Joined</th>
@@ -245,8 +283,10 @@ export default function AdminUsersPage() {
                   {filtered.map(user => (
                     <UserRow
                       key={user.id}
+                      roles={roles}
                       user={user}
                       onToggleStatus={handleToggleStatus}
+                      onUpdateRole={handleUpdateRole}
                     />
                   ))}
                 </tbody>

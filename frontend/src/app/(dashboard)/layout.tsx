@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { isLoggedIn } from '@/lib/auth';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { Sidebar } from '@/components/ui/Sidebar';
 import { PageLoader } from '@/components/ui/Spinner';
 import styles from './DashboardLayout.module.css';
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { loading } = useAuth();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [router]);
 
-  if (!mounted) {
+  if (!mounted || loading) {
     return <PageLoader />;
   }
 
@@ -30,3 +32,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 }
 
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </AuthProvider>
+  );
+}

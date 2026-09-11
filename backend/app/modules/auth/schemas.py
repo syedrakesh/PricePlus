@@ -60,17 +60,25 @@ class UserResponse(BaseModel):
     id: str
     email: str
     is_active: bool
+    is_superuser: bool = False
+    role_slug: str | None = "user"
+    role_name: str | None = "Standard User"
+    permissions: list[str] = []
     created_at: str
 
     model_config = {"from_attributes": True}
 
 
 class AdminUserResponse(BaseModel):
-    """Extended user response for superadmin — includes subscription/plan info."""
+    """Extended user response for superadmin — includes subscription/plan info and RBAC role."""
     id: str
     email: str
     is_active: bool
     is_superuser: bool
+    role_slug: str | None = "user"
+    role_name: str | None = "Standard User"
+    custom_permissions: list[str] = []
+    permissions: list[str] = []
     created_at: str
     plan_name: str
     plan_slug: str | None = None
@@ -78,3 +86,42 @@ class AdminUserResponse(BaseModel):
     subscription_status: str
 
     model_config = {"from_attributes": True}
+
+
+# ── RBAC schemas ─────────────────────────────────────────────────────────────
+
+class PermissionResponse(BaseModel):
+    code: str
+    name: str
+    category: str
+    description: str
+
+    model_config = {"from_attributes": True}
+
+
+class RoleResponse(BaseModel):
+    id: str
+    slug: str
+    name: str
+    description: str
+    is_system: bool
+    permissions: list[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+class RoleCreateRequest(BaseModel):
+    slug: str = Field(min_length=2, max_length=50)
+    name: str = Field(min_length=2, max_length=100)
+    description: str = Field(default="", max_length=255)
+    permissions: list[str] = []
+
+
+class RoleMatrixUpdateRequest(BaseModel):
+    permissions: list[str]
+
+
+class UserRoleUpdateRequest(BaseModel):
+    role_slug: str
+    custom_permissions: list[str] | None = None
+

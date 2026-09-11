@@ -55,7 +55,16 @@ async function request<T>(
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface AuthTokens { access_token: string; refresh_token: string; token_type: string; }
-export interface User { id: string; email: string; is_active: boolean; created_at: string; }
+export interface User {
+  id: string;
+  email: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  role_slug: string;
+  role_name: string;
+  permissions: string[];
+  created_at: string;
+}
 
 export const authApi = {
   register: (email: string, password: string) =>
@@ -298,11 +307,38 @@ export const billingApi = {
     }),
 };
 
+export interface PermissionItem {
+  code: string;
+  name: string;
+  category: string;
+  description: string;
+}
+
+export interface RoleItem {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  is_system: boolean;
+  permissions: string[];
+}
+
+export interface RoleCreateRequest {
+  slug: string;
+  name: string;
+  description?: string;
+  permissions?: string[];
+}
+
 export interface AdminUser {
   id: string;
   email: string;
   is_active: boolean;
   is_superuser: boolean;
+  role_slug: string;
+  role_name: string;
+  custom_permissions: string[];
+  permissions: string[];
   created_at: string;
   plan_name: string;
   plan_slug: string | null;
@@ -329,6 +365,23 @@ export const adminApi = {
       `/auth/admin/users/${userId}/status`,
       { method: 'PATCH' }
     ),
+  updateUserRole: (userId: string, roleSlug: string, customPermissions?: string[]) =>
+    request<AdminUser>(`/auth/admin/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role_slug: roleSlug, custom_permissions: customPermissions }),
+    }),
+  // RBAC Matrix & Roles
+  listPermissions: () => request<PermissionItem[]>('/auth/admin/permissions'),
+  listRoles: () => request<RoleItem[]>('/auth/admin/roles'),
+  createRole: (data: RoleCreateRequest) =>
+    request<RoleItem>('/auth/admin/roles', { method: 'POST', body: JSON.stringify(data) }),
+  updateRoleMatrix: (roleId: string, permissions: string[]) =>
+    request<RoleItem>(`/auth/admin/roles/${roleId}/matrix`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions }),
+    }),
+  deleteRole: (roleId: string) =>
+    request<void>(`/auth/admin/roles/${roleId}`, { method: 'DELETE' }),
 };
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

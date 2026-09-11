@@ -41,6 +41,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.modules.billing.seed_plans import seed_plans
     await seed_plans()
 
+    # Seed RBAC permissions and default roles on startup
+    from app.core.db import AsyncSessionLocal
+    from app.modules.auth.seed_rbac import seed_rbac_data
+    try:
+        async with AsyncSessionLocal() as db:
+            await seed_rbac_data(db)
+    except Exception as exc:
+        logger.warning("Failed to seed RBAC data: %s", exc)
+
     # Clean up orphan discovery runs interrupted by server restarts
     from app.core.db import AsyncSessionLocal
     from sqlalchemy import update
