@@ -66,9 +66,18 @@ async def get_monitoring_engine_status(
             earliest_next_check = earliest_next_check.replace(tzinfo=UTC)
         seconds_until_next_product_check = max(0, int((earliest_next_check - now).total_seconds()))
 
+    res_count = await db.execute(
+        select(func.count()).where(
+            TrackedProduct.user_id == user_id,
+            TrackedProduct.is_active.is_(True),
+        )
+    )
+    user_tracked_count = res_count.scalar_one()
+
     status["user_plan_poll_interval_mins"] = plan_poll_interval_mins
     status["seconds_until_next_product_check"] = seconds_until_next_product_check
     status["earliest_next_check_at"] = earliest_next_check.isoformat() if earliest_next_check else None
+    status["user_tracked_count"] = user_tracked_count
 
     return status
 
@@ -79,7 +88,7 @@ async def trigger_monitoring_cycle_now(
     user_id_str: str = Depends(get_current_user_id),
 ):
     """Trigger an immediate price monitoring cycle across all active tracked products."""
-    res = await monitoring_engine.trigger_now(db)
+    res = await monitoring_engine.trigger_now(db, force_all=True)
     return {
         "message": "Monitoring cycle completed",
         "result": res,

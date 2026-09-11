@@ -197,6 +197,7 @@ export interface MonitoringEngineStatus {
   user_plan_poll_interval_mins?: number;
   seconds_until_next_product_check?: number | null;
   earliest_next_check_at?: string | null;
+  user_tracked_count?: number;
 }
 
 export const monitoringApi = {

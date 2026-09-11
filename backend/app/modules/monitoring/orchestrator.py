@@ -44,24 +44,25 @@ logger = logging.getLogger(__name__)
 _POLL_CONCURRENCY = 10  # Max concurrent product fetches
 
 
-async def run_monitoring_cycle(db: AsyncSession) -> dict:
+async def run_monitoring_cycle(db: AsyncSession, force_all: bool = False) -> dict:
     """
-    Run one full monitoring cycle: poll all active tracked products that are due for check.
-
-    Returns a summary dict with counts for observability.
-    Called by the Celery beat task or in-process background loop periodically.
+    Run one full monitoring cycle: poll active tracked products.
+    If force_all is True, polls ALL active tracked products immediately (e.g. manual trigger).
+    Otherwise, polls active products that are due for check (next_check_at <= now OR next_check_at IS NULL).
     """
     now = datetime.now(UTC)
 
-    # Load active tracked products due for checking (next_check_at <= now OR next_check_at IS NULL)
-    rows = await db.execute(
+    stmt = (
         select(TrackedProduct, DiscoveredProduct)
         .join(DiscoveredProduct, DiscoveredProduct.id == TrackedProduct.discovered_product_id)
-        .where(
-            TrackedProduct.is_active.is_(True),
-            (TrackedProduct.next_check_at.is_(None)) | (TrackedProduct.next_check_at <= now),
-        )
+        .where(TrackedProduct.is_active.is_(True))
     )
+    if not force_all:
+        stmt = stmt.where(
+            (TrackedProduct.next_check_at.is_(None)) | (TrackedProduct.next_check_at <= now)
+        )
+
+    rows = await db.execute(stmt)
     active_tracked = list(rows.all())
 
     if not active_tracked:
@@ -212,9 +213,9 @@ async def _do_poll(
     # Determine baseline previous price (from prev snapshot or discovered.current_price)
     previous_price: float | None = None
     if prev_snapshot is not None and prev_snapshot.price is not None:
-        previous_price = float(prev_snapshot.price)
+        previous_price = prev_snapshot.price
     elif discovered.current_price is not None:
-        previous_price = float(discovered.current_price)
+        previous_price = discovered.current_price
 
     if previous_price is not None and error_message is None:
         previous = SnapshotData(

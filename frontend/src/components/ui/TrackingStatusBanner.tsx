@@ -123,12 +123,16 @@ export function TrackingStatusBanner({ onPollComplete }: TrackingStatusBannerPro
             <span>Last poll: <strong>{lastRunText}</strong></span>
             <span className={styles.metaDot}>•</span>
             <span>Next product check: <strong>{nextCheckText}</strong></span>
-            <span className={styles.metaDot}>•</span>
-            <span>Cycles: {status?.total_cycles_run ?? 0}</span>
+            {status?.user_tracked_count != null && (
+              <>
+                <span className={styles.metaDot}>•</span>
+                <span>Tracked: <strong>{status.user_tracked_count} active</strong></span>
+              </>
+            )}
             {status?.last_polled_count != null && status.last_polled_count > 0 && (
               <>
                 <span className={styles.metaDot}>•</span>
-                <span>Last batch: {status.last_polled_count} checked ({status.last_changes_count} changes)</span>
+                <span>Last tick: {status.last_polled_count} due product(s) checked ({status.last_changes_count} changes)</span>
               </>
             )}
           </div>

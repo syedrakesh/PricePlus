@@ -54,20 +54,19 @@ class MonitoringEngineManager:
         logger.info("Monitoring engine stopped.")
 
     async def restart_engine(self) -> dict[str, Any]:
-        """Restart the background task loop and immediately execute a check cycle."""
+        """Restart the background task loop and immediately execute a check cycle across all products."""
         self.stop_engine()
         self.start_engine()
-        # Trigger an immediate cycle on restart
         from app.core.db import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
-            await self.trigger_now(db)
+            await self.trigger_now(db, force_all=True)
         return self.get_status_dict()
 
-    async def trigger_now(self, db: AsyncSession) -> dict[str, Any]:
-        """Manually trigger a monitoring cycle immediately."""
+    async def trigger_now(self, db: AsyncSession, force_all: bool = False) -> dict[str, Any]:
+        """Trigger a monitoring cycle immediately."""
         async with self._lock:
             try:
-                res = await run_monitoring_cycle(db)
+                res = await run_monitoring_cycle(db, force_all=force_all)
                 self.last_run_at = datetime.now(UTC)
                 self.total_cycles_run += 1
                 self.last_polled_count = res.get("polled", 0)
@@ -81,7 +80,7 @@ class MonitoringEngineManager:
             except Exception as exc:
                 self.last_error_message = str(exc)
                 self.status = "error"
-                logger.exception("Manual monitoring cycle trigger failed: %s", exc)
+                logger.exception("Monitoring cycle trigger failed: %s", exc)
                 raise
 
     async def _periodic_loop(self) -> None:
@@ -91,10 +90,10 @@ class MonitoringEngineManager:
         # Short initial delay on startup so DB migrations/seeds complete cleanly
         await asyncio.sleep(2)
         
-        # Perform initial cycle on engine launch
+        # Perform initial cycle on engine launch (polls due products or forces initial check)
         try:
             async with AsyncSessionLocal() as db:
-                await self.trigger_now(db)
+                await self.trigger_now(db, force_all=True)
         except Exception as exc:
             logger.warning("Initial monitoring run error: %s", exc)
 
