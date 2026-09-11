@@ -6,7 +6,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_password_hash
+from app.core.security import hash_password
 from app.modules.auth.models import Role, User
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ async def seed_demo_users(db: AsyncSession) -> None:
         if not user:
             user = User(
                 email=email,
-                password_hash=get_password_hash(u_data["password"]),
+                password_hash=hash_password(str(u_data["password"])),
                 is_active=True,
                 is_superuser=u_data["is_superuser"],
                 role_id=role_id,

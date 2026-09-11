@@ -335,17 +335,6 @@ export default function AdminPlansPage() {
               </div>
 
               <div className={styles.inputGroup}>
-                <label className={styles.label}>Max VIP Priority Products</label>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={formData.max_priority_products ?? 0}
-                  onChange={e => setFormData({ ...formData, max_priority_products: parseInt(e.target.value) || 0 })}
-                  required
-                />
-              </div>
-
-              <div className={styles.inputGroup}>
                 <label className={styles.label}>Status & Visibility</label>
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
                   <label style={{ color: '#fff', fontSize: '0.875rem' }}>
@@ -414,10 +403,6 @@ export default function AdminPlansPage() {
                   <div className={styles.limitRow}>
                     <span>Min Check Interval:</span>
                     <span className={styles.limitVal}>{plan.poll_interval_mins} mins</span>
-                  </div>
-                  <div className={styles.limitRow}>
-                    <span>VIP Priority Quota:</span>
-                    <span className={styles.limitVal}>{plan.max_priority_products || 0} items</span>
                   </div>
                 </div>
               </div>

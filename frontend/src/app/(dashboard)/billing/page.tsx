@@ -55,7 +55,6 @@ function PlanCard({
     `${plan.max_stores} competitor store${plan.max_stores !== 1 ? 's' : ''}`,
     `${plan.max_tracked_products} tracked products`,
     `Every ${plan.poll_interval_mins} min monitoring`,
-    ...(plan.max_priority_products ? [`${plan.max_priority_products} VIP priority items`] : []),
     ...(plan.features?.csv_export ? ['CSV export'] : []),
     ...(plan.features?.instant_alerts ? ['Instant alerts'] : []),
     ...(plan.features?.dedicated_proxy ? ['Dedicated proxy'] : []),
@@ -315,7 +314,6 @@ export default function BillingPage() {
             <div className={styles.meters}>
               <UsageMeter label="Competitor Stores" current={usage.current_stores} max={usage.max_stores} />
               <UsageMeter label="Tracked Products" current={usage.current_tracked_products} max={usage.max_tracked_products} />
-              <UsageMeter label="VIP Priority Items" current={usage.current_priority_products} max={usage.max_priority_products} />
               <div style={{ fontSize: '0.875rem', color: '#94a3b8', marginTop: '0.5rem' }}>
                 ⚡ Minimum Monitoring Interval: <strong style={{ color: '#38bdf8' }}>{usage.min_poll_interval_mins} mins</strong>
               </div>
