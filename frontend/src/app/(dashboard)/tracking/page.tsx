@@ -12,10 +12,32 @@ import styles from './page.module.css';
 export default function TrackingPage() {
   const { data, isLoading, mutate } = useSWR('tracking', () => trackingApi.list());
 
+  async function handleTogglePriority(item: any) {
+    try {
+      await trackingApi.update(item.id, { is_priority: !item.is_priority });
+      mutate();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update priority');
+    }
+  }
+
+  async function handleIntervalChange(item: any, intervalMinutes: number | null) {
+    try {
+      await trackingApi.update(item.id, { tracking_interval_minutes: intervalMinutes });
+      mutate();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update tracking interval');
+    }
+  }
+
   async function handleUntrack(id: string, title?: string | null) {
-    if (!confirm(`Stop tracking "${title ?? 'this product'}"?`)) return;
-    await trackingApi.untrack(id);
-    mutate();
+    if (!confirm(`Stop tracking "${title || 'this product'}"?`)) return;
+    try {
+      await trackingApi.untrack(id);
+      mutate();
+    } catch (err: any) {
+      alert(err.message || 'Failed to untrack product');
+    }
   }
 
   return (
@@ -55,7 +77,10 @@ export default function TrackingPage() {
                       <div className={styles.thumbPlaceholder}>📦</div>
                     )}
                     <div className={styles.info}>
-                      <h3 className={styles.title}>{p.title ?? p.handle}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h3 className={styles.title}>{p.title ?? p.handle}</h3>
+                        {item.is_priority && <Badge variant="accent">⚡ VIP Priority</Badge>}
+                      </div>
                       {hostname && <span className={styles.url}>{hostname}</span>}
                     </div>
                     <div className={styles.priceCol}>
@@ -65,7 +90,34 @@ export default function TrackingPage() {
                         <span className={styles.noPrice}>—</span>
                       )}
                     </div>
-                    <div className={styles.actions}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <select
+                        value={item.tracking_interval_minutes ?? ''}
+                        onChange={e => handleIntervalChange(item, e.target.value ? parseInt(e.target.value) : null)}
+                        style={{
+                          background: 'rgba(15, 23, 42, 0.8)',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          padding: '0.35rem 0.5rem',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        <option value="">Default Interval</option>
+                        <option value="60">1 Hour (Enterprise)</option>
+                        <option value="360">6 Hours (Pro)</option>
+                        <option value="1440">24 Hours (Free)</option>
+                      </select>
+
+                      <Button
+                        size="sm"
+                        variant={item.is_priority ? 'secondary' : 'ghost'}
+                        onClick={() => handleTogglePriority(item)}
+                        title="Toggle VIP High Frequency Priority"
+                      >
+                        {item.is_priority ? '⚡ VIP' : '☆ Standard'}
+                      </Button>
+
                       <Link href={`/tracking/${item.id}`}>
                         <Button size="sm" variant="secondary">History</Button>
                       </Link>

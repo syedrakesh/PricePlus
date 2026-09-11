@@ -74,7 +74,7 @@ function PlanCard({ plan, current, onUpgrade }: {
 
 export default function BillingPage() {
   const { data: plans, isLoading: plansLoading } = useSWR('plans', () => billingApi.plans());
-  const { data: entitlements, isLoading: entLoading } = useSWR('entitlements', () => billingApi.entitlements());
+  const { data: usage, isLoading: usageLoading } = useSWR('user-usage', () => billingApi.getUsage());
   const { data: subscription } = useSWR('subscription', () => billingApi.subscription());
 
   async function handleUpgrade(planId: string) {
@@ -101,9 +101,9 @@ export default function BillingPage() {
     }
   }
 
-  if (plansLoading || entLoading) return <PageLoader />;
+  if (plansLoading || usageLoading) return <PageLoader />;
 
-  const currentPlanName = entitlements?.plan_name ?? 'free';
+  const currentPlanName = usage?.plan_name ?? 'free';
 
   return (
     <div className={styles.page}>
@@ -118,24 +118,32 @@ export default function BillingPage() {
       </div>
 
       {/* Usage meters */}
-      {entitlements && (
+      {usage && (
         <Card>
           <CardHeader>
-            <h3>Current Usage</h3>
-            <Badge variant="accent">{entitlements.plan_name} plan</Badge>
+            <h3>Current Usage &amp; Plan Limits</h3>
+            <Badge variant="accent">{usage.plan_name} plan</Badge>
           </CardHeader>
           <CardBody>
             <div className={styles.meters}>
               <UsageMeter
                 label="Competitor Stores"
-                current={entitlements.current_stores}
-                max={entitlements.max_stores}
+                current={usage.current_stores}
+                max={usage.max_stores}
               />
               <UsageMeter
                 label="Tracked Products"
-                current={entitlements.current_tracked_products}
-                max={entitlements.max_tracked_products}
+                current={usage.current_tracked_products}
+                max={usage.max_tracked_products}
               />
+              <UsageMeter
+                label="VIP Priority Items"
+                current={usage.current_priority_products}
+                max={usage.max_priority_products}
+              />
+              <div style={{ fontSize: '0.875rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                ⚡ Minimum Monitoring Check Interval: <strong style={{ color: '#38bdf8' }}>{usage.min_poll_interval_mins} mins</strong>
+              </div>
             </div>
             {subscription?.current_period_end && (
               <p className={styles.renewalNote}>

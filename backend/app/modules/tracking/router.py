@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.core.dependencies import get_current_user_id
-from app.modules.billing.entitlements import EntitlementError
+from app.modules.billing.entitlements import EntitlementError, EntitlementService
 from app.modules.tracking.schemas import (
     BulkTrackResponse,
     TrackAllResponse,
@@ -28,6 +28,7 @@ from app.modules.tracking.schemas import (
     TrackedProductResponse,
     TrackMultipleRequest,
     TrackProductRequest,
+    UpdateTrackedProductRequest,
 )
 from app.modules.tracking.service import (
     TrackingError,
@@ -245,6 +246,37 @@ async def get_single_tracked(
         tracked_obj, product_obj = await get_tracked_product(db, user_id, tracked_uuid)
     except TrackingError as e:
         _handle_tracking_error(e)
+
+    return TrackedProductResponse.from_orm_model(tracked_obj, product_obj)
+
+
+@router.patch("/tracked/{tracked_id}", response_model=TrackedProductResponse)
+async def update_single_tracked(
+    tracked_id: str,
+    data: UpdateTrackedProductRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+) -> TrackedProductResponse:
+    """Update custom tracking frequency or VIP priority status for a tracked product."""
+    from datetime import UTC, datetime, timedelta
+    user_id = _parse_uuid(user_id_str, "User")
+    tracked_uuid = _parse_uuid(tracked_id, "Tracked product")
+
+    tracked_obj, product_obj = await get_tracked_product(db, user_id, tracked_uuid)
+
+    if data.tracking_interval_minutes is not None:
+        await EntitlementService.check_can_set_interval(user_id, data.tracking_interval_minutes, db)
+        tracked_obj.tracking_interval_minutes = data.tracking_interval_minutes
+        tracked_obj.next_check_at = datetime.now(UTC) + timedelta(minutes=data.tracking_interval_minutes)
+
+    if data.is_priority is not None and data.is_priority != tracked_obj.is_priority:
+        if data.is_priority:
+            await EntitlementService.check_can_set_priority(user_id, db)
+        tracked_obj.is_priority = data.is_priority
+
+    tracked_obj.updated_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(tracked_obj)
 
     return TrackedProductResponse.from_orm_model(tracked_obj, product_obj)
 

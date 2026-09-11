@@ -10,8 +10,9 @@ const NAV = [
   { href: '/stores',   label: 'Stores',     icon: '🏪' },
   { href: '/tracking', label: 'Products',   icon: '📦' },
   { href: '/alerts',   label: 'Alerts',     icon: '🔔' },
-  { href: '/billing',  label: 'Billing',    icon: '💳' },
-  { href: '/settings', label: 'Settings',   icon: '⚙️' },
+  { href: '/billing',     label: 'Billing',    icon: '💳' },
+  { href: '/settings',    label: 'Settings',   icon: '⚙️' },
+  { href: '/admin/plans', label: 'Admin Plans', icon: '👑' },
 ];
 
 export function Sidebar() {

@@ -125,8 +125,15 @@ def _make_db(
     call_returns.append(count_result)
 
     # 5th call: plan limit (from entitlement service)
+    plan_mock = MagicMock()
+    plan_mock.max_tracked_products = max_products
+    plan_mock.max_stores = 2
+    plan_mock.poll_interval_mins = 60
+    plan_mock.max_priority_products = 0
+
     plan_result = MagicMock()
     plan_result.scalar_one_or_none.return_value = max_products
+    plan_result.scalars.return_value.first.return_value = plan_mock
     call_returns.append(plan_result)
 
     db.execute.side_effect = call_returns

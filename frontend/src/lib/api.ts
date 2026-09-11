@@ -133,8 +133,11 @@ export const productsApi = {
 export interface TrackedProduct {
   id: string; user_id: string; discovered_product_id: string;
   store_id: string; is_active: boolean; created_at: string;
+  tracking_interval_minutes?: number | null;
+  is_priority?: boolean;
+  next_check_at?: string | null;
   handle?: string | null; product_url?: string | null; title?: string | null;
-  current_price?: number | null; currency?: string | null; is_available?: boolean | null;
+  current_price?: number | null; currency?: string | null;
   image_url?: string | null;
   product?: DiscoveredProduct;
 }
@@ -149,6 +152,8 @@ export const trackingApi = {
   list: () => request<TrackedProductList>('/tracked'),
   track: (discoveredProductId: string) =>
     request<TrackedProduct>('/track', { method: 'POST', body: JSON.stringify({ discovered_product_id: discoveredProductId }) }),
+  update: (trackedId: string, data: { tracking_interval_minutes?: number | null; is_priority?: boolean }) =>
+    request<TrackedProduct>(`/tracked/${trackedId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   untrack: (trackedId: string) => request<void>(`/tracked/${trackedId}`, { method: 'DELETE' }),
 };
 
@@ -205,11 +210,13 @@ export const alertsApi = {
   unreadCount: () => request<{ unread_count: number }>('/alerts/unread-count'),
 };
 
-// ─── Billing ──────────────────────────────────────────────────────────────────
+// ─── Billing & Subscriptions ─────────────────────────────────────────────────
 
 export interface Plan {
-  id: string; name: string; price_usd: number | null;
-  max_stores: number; max_tracked_products: number; poll_interval_mins: number; is_active: boolean;
+  id: string; name: string; slug?: string; price_usd: number | null;
+  max_stores: number; max_tracked_products: number; poll_interval_mins: number;
+  max_priority_products?: number; is_active: boolean; is_public?: boolean;
+  features?: Record<string, any>;
 }
 
 export interface Entitlements {
@@ -218,8 +225,17 @@ export interface Entitlements {
   poll_interval_mins: number; subscription_status: string;
 }
 
+export interface UserUsageSummary {
+  plan_id: string; plan_name: string; plan_slug: string; price_usd: number;
+  max_stores: number; current_stores: number; max_tracked_products: number;
+  current_tracked_products: number; min_poll_interval_mins: number;
+  max_priority_products: number; current_priority_products: number;
+  features: Record<string, any>;
+}
+
 export const billingApi = {
   plans: () => request<Plan[]>('/billing/plans'),
+  getUsage: () => request<UserUsageSummary>('/billing/usage'),
   subscription: () => request<{ plan: Plan; status: string; current_period_end: string | null } | null>('/billing/subscription'),
   entitlements: () => request<Entitlements>('/billing/entitlements'),
   checkout: (planId: string, successUrl: string, cancelUrl: string) =>
@@ -233,6 +249,14 @@ export const billingApi = {
     }),
 };
 
+export const adminApi = {
+  listPlans: () => request<Plan[]>('/billing/admin/plans'),
+  createPlan: (data: Partial<Plan>) =>
+    request<Plan>('/billing/admin/plans', { method: 'POST', body: JSON.stringify(data) }),
+  updatePlan: (id: string, data: Partial<Plan>) =>
+    request<Plan>(`/billing/admin/plans/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+};
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export interface UserSettings {
@@ -240,6 +264,8 @@ export interface UserSettings {
   discovery_concurrency: number;
   discovery_min_delay: number;
   discovery_max_delay: number;
+  default_tracking_interval_minutes?: number;
+  preferred_check_hour?: number;
   updated_at: string;
 }
 
@@ -249,6 +275,8 @@ export const settingsApi = {
     discovery_concurrency?: number;
     discovery_min_delay?: number;
     discovery_max_delay?: number;
+    default_tracking_interval_minutes?: number;
+    preferred_check_hour?: number;
   }) =>
     request<UserSettings>('/settings', {
       method: 'PATCH',

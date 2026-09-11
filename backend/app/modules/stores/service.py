@@ -10,7 +10,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.billing.entitlements import check_store_limit
+from app.modules.billing.entitlements import EntitlementService
 from app.modules.stores.models import CompetitorStore
 from app.modules.stores.schemas import AddStoreRequest
 from app.modules.stores.url_validator import URLValidationError, validate_store_url
@@ -64,11 +64,7 @@ async def add_store(
         )
 
     # Step 3: entitlement check
-    count_result = await db.execute(
-        select(func.count()).where(CompetitorStore.user_id == user_id)
-    )
-    current_count = count_result.scalar_one()
-    await check_store_limit(db, user_id, current_count)
+    await EntitlementService.check_can_add_store(user_id, db)
 
     # Step 4: persist
     store = CompetitorStore(

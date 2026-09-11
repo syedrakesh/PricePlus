@@ -23,6 +23,17 @@ class TrackMultipleRequest(BaseModel):
     )
 
 
+class UpdateTrackedProductRequest(BaseModel):
+    """Request body for updating tracked product frequency or priority status."""
+
+    tracking_interval_minutes: int | None = Field(
+        default=None, ge=15, description="Custom check interval in minutes (None = reset to user default)"
+    )
+    is_priority: bool | None = Field(
+        default=None, description="Set VIP priority status for high-frequency monitoring"
+    )
+
+
 class TrackedProductResponse(BaseModel):
     """Response schema for a single tracked product."""
 
@@ -31,6 +42,9 @@ class TrackedProductResponse(BaseModel):
     discovered_product_id: str
     store_id: str
     is_active: bool
+    tracking_interval_minutes: int | None = None
+    is_priority: bool = False
+    next_check_at: str | None = None
     created_at: str
 
     # Enriched product fields (joined from discovered_products)
@@ -39,7 +53,6 @@ class TrackedProductResponse(BaseModel):
     title: str | None = None
     current_price: float | None = None
     currency: str | None = None
-    is_available: bool | None = None
     image_url: str | None = None
 
     @classmethod
@@ -65,7 +78,6 @@ class TrackedProductResponse(BaseModel):
                     else None
                 ),
                 "currency": product.currency,
-                "is_available": product.is_available,
                 "image_url": product.image_url,
             }
 
@@ -75,6 +87,9 @@ class TrackedProductResponse(BaseModel):
             discovered_product_id=str(tracked.discovered_product_id),
             store_id=str(tracked.store_id),
             is_active=tracked.is_active,
+            tracking_interval_minutes=tracked.tracking_interval_minutes,
+            is_priority=tracked.is_priority,
+            next_check_at=tracked.next_check_at.isoformat() if tracked.next_check_at else None,
             created_at=tracked.created_at.isoformat(),
             **enriched,
         )

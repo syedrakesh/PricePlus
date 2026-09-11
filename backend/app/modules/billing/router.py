@@ -23,17 +23,21 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
-from app.core.dependencies import get_current_user_id
+from app.core.dependencies import get_current_user_id, get_current_superuser_id
 from app.modules.auth.models import User
+from app.modules.billing.entitlements import EntitlementService
 from app.modules.billing.models import Plan, Subscription
 from app.modules.billing.schemas import (
     BillingPortalResponse,
     CheckoutSessionResponse,
     CreateCheckoutSessionRequest,
+    CreatePlanRequest,
     CreatePortalSessionRequest,
     EntitlementResponse,
     PlanResponse,
     SubscriptionResponse,
+    UpdatePlanRequest,
+    UserUsageSummaryResponse,
 )
 from app.modules.billing.stripe_service import (
     BillingError,
@@ -58,12 +62,122 @@ def _billing_error_to_http(e: BillingError) -> None:
 
 @router.get("/plans", response_model=list[PlanResponse])
 async def list_plans(db: AsyncSession = Depends(get_db)) -> list[PlanResponse]:
-    """List all active plans (public — no auth required)."""
+    """List all active public plans (public — no auth required)."""
     result = await db.execute(
-        select(Plan).where(Plan.is_active == True).order_by(Plan.price_usd.asc())  # noqa: E712
+        select(Plan).where(Plan.is_active.is_(True), Plan.is_public.is_(True)).order_by(Plan.price_usd.asc())
     )
     plans = list(result.scalars().all())
     return [PlanResponse.from_orm_model(p) for p in plans]
+
+
+@router.get("/usage", response_model=UserUsageSummaryResponse)
+async def get_user_usage(
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+) -> UserUsageSummaryResponse:
+    """Return user's active subscription limits and actual usage breakdown."""
+    user_id = uuid.UUID(user_id_str)
+    summary = await EntitlementService.get_user_usage_summary(user_id, db)
+    return UserUsageSummaryResponse(
+        plan_id=summary.plan_id,
+        plan_name=summary.plan_name,
+        plan_slug=summary.plan_slug,
+        price_usd=summary.price_usd,
+        max_stores=summary.max_stores,
+        current_stores=summary.current_stores,
+        max_tracked_products=summary.max_tracked_products,
+        current_tracked_products=summary.current_tracked_products,
+        min_poll_interval_mins=summary.min_poll_interval_mins,
+        max_priority_products=summary.max_priority_products,
+        current_priority_products=summary.current_priority_products,
+        features=summary.features,
+    )
+
+
+# ─── Superadmin Plan Management ───────────────────────────────────────────────
+
+@router.get("/admin/plans", response_model=list[PlanResponse])
+async def admin_list_plans(
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_superuser_id),
+) -> list[PlanResponse]:
+    """List all plans including inactive & hidden plans (Superadmin only)."""
+    result = await db.execute(select(Plan).order_by(Plan.created_at.desc()))
+    plans = list(result.scalars().all())
+    return [PlanResponse.from_orm_model(p) for p in plans]
+
+
+@router.post("/admin/plans", response_model=PlanResponse, status_code=201)
+async def admin_create_plan(
+    data: CreatePlanRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_superuser_id),
+) -> PlanResponse:
+    """Create a new subscription plan (Superadmin only)."""
+    existing = await db.execute(select(Plan).where(Plan.slug == data.slug))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Plan slug '{data.slug}' already exists")
+
+    plan = Plan(
+        name=data.name,
+        slug=data.slug,
+        price_usd=data.price_usd,
+        max_stores=data.max_stores,
+        max_tracked_products=data.max_tracked_products,
+        poll_interval_mins=data.poll_interval_mins,
+        max_priority_products=data.max_priority_products,
+        is_active=data.is_active,
+        is_public=data.is_public,
+        features=data.features,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return PlanResponse.from_orm_model(plan)
+
+
+@router.patch("/admin/plans/{plan_id}", response_model=PlanResponse)
+async def admin_update_plan(
+    plan_id: str,
+    data: UpdatePlanRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_superuser_id),
+) -> PlanResponse:
+    """Update subscription plan parameters on the fly (Superadmin only)."""
+    try:
+        p_uuid = uuid.UUID(plan_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Plan not found") from None
+
+    result = await db.execute(select(Plan).where(Plan.id == p_uuid))
+    plan = result.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    if data.name is not None:
+        plan.name = data.name
+    if data.slug is not None:
+        plan.slug = data.slug
+    if data.price_usd is not None:
+        plan.price_usd = data.price_usd
+    if data.max_stores is not None:
+        plan.max_stores = data.max_stores
+    if data.max_tracked_products is not None:
+        plan.max_tracked_products = data.max_tracked_products
+    if data.poll_interval_mins is not None:
+        plan.poll_interval_mins = data.poll_interval_mins
+    if data.max_priority_products is not None:
+        plan.max_priority_products = data.max_priority_products
+    if data.is_active is not None:
+        plan.is_active = data.is_active
+    if data.is_public is not None:
+        plan.is_public = data.is_public
+    if data.features is not None:
+        plan.features = data.features
+
+    await db.commit()
+    await db.refresh(plan)
+    return PlanResponse.from_orm_model(plan)
 
 
 @router.get("/subscription", response_model=SubscriptionResponse | None)

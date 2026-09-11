@@ -157,7 +157,7 @@ async def _do_poll(
     if extracted is not None:
         current = SnapshotData(
             price=extracted.price,
-            is_available=extracted.is_available,
+            is_available=True,
             currency=extracted.currency,
         )
     else:
@@ -171,12 +171,17 @@ async def _do_poll(
         user_id=tracked.user_id,
         price=current.price,
         currency=current.currency,
-        is_available=current.is_available,
+        is_available=True,
         http_status=http_status,
         error_message=error_message,
         captured_at=now,
     )
     db.add(snapshot)
+
+    # Calculate next_check_at
+    from datetime import timedelta
+    interval_mins = tracked.tracking_interval_minutes or 360
+    tracked.next_check_at = now + timedelta(minutes=interval_mins)
 
     # Load previous snapshot for comparison
     prev_result = await db.execute(
@@ -236,7 +241,6 @@ async def _do_poll(
                 current_price=extracted.price,
                 compare_at_price=extracted.compare_at_price,
                 currency=extracted.currency,
-                is_available=extracted.is_available,
                 is_on_sale=extracted.is_on_sale,
                 is_discontinued=extracted.is_discontinued,
                 data_fetched_at=now,

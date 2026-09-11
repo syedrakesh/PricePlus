@@ -13,7 +13,7 @@ Design decisions:
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,6 +59,22 @@ class TrackedProduct(Base):
         Boolean,
         default=True,
         nullable=False,
+        index=True,
+    )
+    tracking_interval_minutes: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Custom tracking check interval in minutes; None = inherit user default",
+    )
+    is_priority: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Priority VIP status for high-frequency monitoring",
+    )
+    next_check_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(

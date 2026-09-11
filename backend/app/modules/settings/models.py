@@ -38,6 +38,18 @@ class UserSettings(Base):
         nullable=False,
         comment="Maximum delay between requests in seconds",
     )
+    default_tracking_interval_minutes: Mapped[int] = mapped_column(
+        Integer,
+        default=360,
+        nullable=False,
+        comment="Default monitoring check interval in minutes (e.g. 360 = 6 hours)",
+    )
+    preferred_check_hour: Mapped[int] = mapped_column(
+        Integer,
+        default=8,
+        nullable=False,
+        comment="Preferred daily check hour in UTC (0 to 23)",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
