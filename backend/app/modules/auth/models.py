@@ -81,6 +81,14 @@ class User(Base):
         nullable=False,
         index=True,
     )
+    full_name: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+    phone_number: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
     password_hash: Mapped[str] = mapped_column(
         String(255),
         nullable=False,

@@ -59,6 +59,8 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: str
     email: str
+    full_name: str | None = None
+    phone_number: str | None = None
     is_active: bool
     is_superuser: bool = False
     role_slug: str | None = "user"
@@ -73,6 +75,8 @@ class AdminUserResponse(BaseModel):
     """Extended user response for superadmin — includes subscription/plan info and RBAC role."""
     id: str
     email: str
+    full_name: str | None = None
+    phone_number: str | None = None
     is_active: bool
     is_superuser: bool
     role_slug: str | None = "user"
@@ -86,6 +90,41 @@ class AdminUserResponse(BaseModel):
     subscription_status: str
 
     model_config = {"from_attributes": True}
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=150)
+    email: EmailStr | None = None
+    phone_number: str | None = Field(default=None, max_length=50)
+
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, v: str | None) -> str | None:
+        return v.lower().strip() if v else None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+
+
+class AdminUpdateUserRequest(BaseModel):
+    full_name: str | None = Field(default=None, max_length=150)
+    email: EmailStr | None = None
+    phone_number: str | None = Field(default=None, max_length=50)
+    is_active: bool | None = None
+    role_slug: str | None = None
+    custom_permissions: list[str] | None = None
+    plan_id: str | None = None
 
 
 # ── RBAC schemas ─────────────────────────────────────────────────────────────

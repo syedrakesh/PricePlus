@@ -2,19 +2,12 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { adminApi, AdminUser, RoleItem } from '@/lib/api';
+import { adminApi, AdminUser, RoleItem, PermissionItem, Plan } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { PageLoader } from '@/components/ui/Spinner';
 import styles from './page.module.css';
-
-const PLAN_SLUG_COLOR: Record<string, string> = {
-  free:       '#64748b',
-  starter:    '#10b981',
-  pro:        '#38bdf8',
-  enterprise: '#818cf8',
-};
 
 function planVariant(slug: string | null): 'default' | 'success' | 'accent' | 'info' {
   if (slug === 'enterprise') return 'accent';
@@ -31,38 +24,201 @@ function subStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'i
   return 'default';
 }
 
+// ─── Edit User Drawer ─────────────────────────────────────────────────────────
+
+function EditUserDrawer({
+  user,
+  roles,
+  allPermissions,
+  plans,
+  onClose,
+  onSave,
+}: {
+  user: AdminUser;
+  roles: RoleItem[];
+  allPermissions: PermissionItem[];
+  plans: Plan[];
+  onClose: () => void;
+  onSave: (updated: Partial<AdminUser> & { plan_id?: string }) => Promise<void>;
+}) {
+  const [fullName, setFullName] = useState(user.full_name ?? '');
+  const [email, setEmail] = useState(user.email ?? '');
+  const [phoneNumber, setPhoneNumber] = useState(user.phone_number ?? '');
+  const [isActive, setIsActive] = useState(user.is_active);
+  const [roleSlug, setRoleSlug] = useState(user.role_slug || 'user');
+  const [planId, setPlanId] = useState(user.plan_id ?? '');
+  const [customPerms, setCustomPerms] = useState<string[]>(user.custom_permissions || []);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const toggleCustomPerm = (code: string) => {
+    setCustomPerms(prev =>
+      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
+    );
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      await onSave({
+        full_name: fullName,
+        email: email,
+        phone_number: phoneNumber,
+        is_active: isActive,
+        role_slug: roleSlug,
+        custom_permissions: customPerms,
+        plan_id: planId || undefined,
+      });
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to update user');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className={styles.drawerOverlay} onClick={onClose}>
+      <div className={styles.drawerContent} onClick={e => e.stopPropagation()}>
+        <div className={styles.drawerHeader}>
+          <div className={styles.drawerTitle}>✏️ Edit User Details</div>
+          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+          <div className={styles.drawerBody}>
+            {errorMsg && (
+              <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', borderRadius: '6px', fontSize: '0.8rem' }}>
+                ⚠️ {errorMsg}
+              </div>
+            )}
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>Full Name</label>
+              <input
+                type="text"
+                className={styles.input}
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                placeholder="John Doe"
+              />
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>Email Address</label>
+              <input
+                type="email"
+                required
+                className={styles.input}
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>Phone Number</label>
+              <input
+                type="tel"
+                className={styles.input}
+                value={phoneNumber}
+                onChange={e => setPhoneNumber(e.target.value)}
+                placeholder="+1 (555) 000-0000"
+              />
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>Account Status</label>
+              <select
+                className={styles.input}
+                value={isActive ? 'active' : 'inactive'}
+                onChange={e => setIsActive(e.target.value === 'active')}
+                disabled={user.is_superuser}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive / Suspended</option>
+              </select>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>System RBAC Role</label>
+              <select
+                className={styles.input}
+                value={roleSlug}
+                onChange={e => setRoleSlug(e.target.value)}
+                disabled={user.is_superuser}
+              >
+                {roles.map(r => (
+                  <option key={r.id} value={r.slug}>{r.name} ({r.slug})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>Subscription Plan</label>
+              <select
+                className={styles.input}
+                value={planId}
+                onChange={e => setPlanId(e.target.value)}
+              >
+                <option value="">-- Keep Current Plan --</option>
+                {plans.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} (${p.price_usd}/mo)</option>
+                ))}
+              </select>
+            </div>
+
+            <div className={styles.fieldGroup}>
+              <label className={styles.fieldLabel}>Custom Permission Overrides</label>
+              <div className={styles.permGrid}>
+                {allPermissions.map(p => (
+                  <label key={p.code} className={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={customPerms.includes(p.code)}
+                      onChange={() => toggleCustomPerm(p.code)}
+                    />
+                    <span>{p.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.drawerFooter}>
+            <Button variant="secondary" onClick={onClose} type="button">
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={saving}>
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── User Row ─────────────────────────────────────────────────────────────────
 
 function UserRow({
   user,
   roles,
+  onEdit,
   onToggleStatus,
-  onUpdateRole,
 }: {
   user: AdminUser;
   roles: RoleItem[];
+  onEdit: (user: AdminUser) => void;
   onToggleStatus: (id: string) => Promise<void>;
-  onUpdateRole: (userId: string, roleSlug: string) => Promise<void>;
 }) {
   const [toggling, setToggling] = useState(false);
-  const [updatingRole, setUpdatingRole] = useState(false);
 
   async function handleToggle() {
     setToggling(true);
     await onToggleStatus(user.id);
     setToggling(false);
-  }
-
-  async function handleRoleSelect(e: React.ChangeEvent<HTMLSelectElement>) {
-    const newRoleSlug = e.target.value;
-    setUpdatingRole(true);
-    try {
-      await onUpdateRole(user.id, newRoleSlug);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to update role');
-    } finally {
-      setUpdatingRole(false);
-    }
   }
 
   const joinedDate = new Date(user.created_at).toLocaleDateString('en-US', {
@@ -74,11 +230,21 @@ function UserRow({
       <td className={styles.td}>
         <div className={styles.emailCell}>
           <div className={styles.avatar}>
-            {user.email[0].toUpperCase()}
+            {(user.full_name ? user.full_name[0] : user.email[0]).toUpperCase()}
           </div>
           <div>
-            <div className={styles.emailText}>{user.email}</div>
-            <div className={styles.userId} title={user.id}>{user.id.slice(0, 8)}…</div>
+            <div className={styles.emailText}>
+              {user.full_name ? (
+                <span>
+                  <strong>{user.full_name}</strong> <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>({user.email})</span>
+                </span>
+              ) : (
+                user.email
+              )}
+            </div>
+            <div className={styles.userId} title={user.id}>
+              {user.phone_number ? `📞 ${user.phone_number} • ` : ''}ID: {user.id.slice(0, 8)}…
+            </div>
           </div>
         </div>
       </td>
@@ -91,17 +257,9 @@ function UserRow({
         {user.is_superuser ? (
           <Badge variant="accent">SuperAdmin</Badge>
         ) : (
-          <select
-            value={user.role_slug || 'user'}
-            onChange={handleRoleSelect}
-            disabled={updatingRole}
-            className={styles.input}
-            style={{ padding: '2px 6px', fontSize: '0.8rem' }}
-          >
-            {roles.map(r => (
-              <option key={r.id} value={r.slug}>{r.name}</option>
-            ))}
-          </select>
+          <Badge variant="info">
+            {user.role_name}
+          </Badge>
         )}
       </td>
       <td className={styles.td}>
@@ -118,18 +276,28 @@ function UserRow({
         {joinedDate}
       </td>
       <td className={styles.td}>
-        {!user.is_superuser && (
+        <div style={{ display: 'flex', gap: '6px' }}>
           <Button
-            id={`toggle-user-${user.id}`}
             size="sm"
             variant="secondary"
-            onClick={handleToggle}
-            disabled={toggling}
-            style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+            onClick={() => onEdit(user)}
+            style={{ fontSize: '0.75rem', padding: '4px 8px' }}
           >
-            {toggling ? '…' : user.is_active ? 'Deactivate' : 'Activate'}
+            ✏️ Edit
           </Button>
-        )}
+          {!user.is_superuser && (
+            <Button
+              id={`toggle-user-${user.id}`}
+              size="sm"
+              variant="secondary"
+              onClick={handleToggle}
+              disabled={toggling}
+              style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+            >
+              {toggling ? '…' : user.is_active ? 'Deactivate' : 'Activate'}
+            </Button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -140,6 +308,10 @@ function UserRow({
 export default function AdminUsersPage() {
   const { data: users, isLoading: loadingUsers, mutate: mutateUsers } = useSWR('admin-users', adminApi.listUsers);
   const { data: roles = [], isLoading: loadingRoles } = useSWR('admin-roles', adminApi.listRoles);
+  const { data: permissions = [] } = useSWR('admin-permissions', adminApi.listPermissions);
+  const { data: plans = [] } = useSWR('admin-plans', adminApi.listPlans);
+
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
 
   const [search, setSearch] = useState('');
   const [filterPlan, setFilterPlan] = useState('');
@@ -150,8 +322,9 @@ export default function AdminUsersPage() {
     await mutateUsers();
   }
 
-  async function handleUpdateRole(userId: string, roleSlug: string) {
-    await adminApi.updateUserRole(userId, roleSlug);
+  async function handleSaveUser(data: Partial<AdminUser> & { plan_id?: string }) {
+    if (!editingUser) return;
+    await adminApi.updateUser(editingUser.id, data);
     await mutateUsers();
   }
 
@@ -160,7 +333,10 @@ export default function AdminUsersPage() {
   const planSlugs = [...new Set((users ?? []).map(u => u.plan_slug ?? 'free'))];
 
   const filtered = (users ?? []).filter(u => {
-    const emailMatch = u.email.toLowerCase().includes(search.toLowerCase());
+    const searchLower = search.toLowerCase();
+    const emailMatch = u.email.toLowerCase().includes(searchLower) ||
+                       (u.full_name && u.full_name.toLowerCase().includes(searchLower)) ||
+                       (u.phone_number && u.phone_number.includes(searchLower));
     const planMatch = filterPlan ? (u.plan_slug ?? 'free') === filterPlan : true;
     const statusMatch = filterStatus ? u.subscription_status === filterStatus : true;
     return emailMatch && planMatch && statusMatch;
@@ -176,7 +352,7 @@ export default function AdminUsersPage() {
         <div>
           <h1 className={styles.title}>👥 User Management</h1>
           <p className={styles.subtitle}>
-            View and manage all registered users, assign system roles, subscription plans, and account status.
+            View and edit user details, contact info, system roles, subscription plans, and custom permission overrides.
           </p>
         </div>
       </div>
@@ -211,7 +387,7 @@ export default function AdminUsersPage() {
               <input
                 type="text"
                 className={styles.input}
-                placeholder="🔍 Search by email…"
+                placeholder="🔍 Search by name, email, or phone…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 id="user-search-input"
@@ -285,8 +461,8 @@ export default function AdminUsersPage() {
                       key={user.id}
                       roles={roles}
                       user={user}
+                      onEdit={u => setEditingUser(u)}
                       onToggleStatus={handleToggleStatus}
-                      onUpdateRole={handleUpdateRole}
                     />
                   ))}
                 </tbody>
@@ -295,6 +471,18 @@ export default function AdminUsersPage() {
           )}
         </CardBody>
       </Card>
+
+      {/* Edit Drawer */}
+      {editingUser && (
+        <EditUserDrawer
+          user={editingUser}
+          roles={roles}
+          allPermissions={permissions}
+          plans={plans}
+          onClose={() => setEditingUser(null)}
+          onSave={handleSaveUser}
+        />
+      )}
     </div>
   );
 }

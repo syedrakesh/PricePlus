@@ -58,6 +58,8 @@ export interface AuthTokens { access_token: string; refresh_token: string; token
 export interface User {
   id: string;
   email: string;
+  full_name: string | null;
+  phone_number: string | null;
   is_active: boolean;
   is_superuser: boolean;
   role_slug: string;
@@ -72,6 +74,13 @@ export const authApi = {
   login: (email: string, password: string) =>
     request<AuthTokens>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: () => request<User>('/auth/me'),
+  updateProfile: (data: { full_name?: string | null; email?: string; phone_number?: string | null }) =>
+    request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    }),
 };
 
 // ─── Stores ───────────────────────────────────────────────────────────────────
@@ -358,6 +367,8 @@ export interface RoleCreateRequest {
 export interface AdminUser {
   id: string;
   email: string;
+  full_name: string | null;
+  phone_number: string | null;
   is_active: boolean;
   is_superuser: boolean;
   role_slug: string;
@@ -385,6 +396,22 @@ export const adminApi = {
     }),
   // Users
   listUsers: () => request<AdminUser[]>('/auth/admin/users'),
+  updateUser: (
+    userId: string,
+    data: {
+      full_name?: string | null;
+      email?: string;
+      phone_number?: string | null;
+      is_active?: boolean;
+      role_slug?: string;
+      custom_permissions?: string[];
+      plan_id?: string;
+    }
+  ) =>
+    request<AdminUser>(`/auth/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
   toggleUserStatus: (userId: string) =>
     request<{ id: string; email: string; is_active: boolean; created_at: string }>(
       `/auth/admin/users/${userId}/status`,

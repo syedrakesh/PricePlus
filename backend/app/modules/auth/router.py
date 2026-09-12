@@ -16,9 +16,12 @@ from app.core.dependencies import (
     get_current_superuser_id,
     get_effective_user_permissions,
 )
+from app.core.security import hash_password, verify_password
 from app.modules.auth.models import Permission, Role, RolePermission, User
 from app.modules.auth.schemas import (
+    AdminUpdateUserRequest,
     AdminUserResponse,
+    ChangePasswordRequest,
     LoginRequest,
     PermissionResponse,
     RefreshRequest,
@@ -27,6 +30,7 @@ from app.modules.auth.schemas import (
     RoleMatrixUpdateRequest,
     RoleResponse,
     TokenResponse,
+    UpdateProfileRequest,
     UserResponse,
     UserRoleUpdateRequest,
 )
@@ -99,6 +103,8 @@ async def me(
     return UserResponse(
         id=str(user.id),
         email=user.email,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         role_slug=role_slug,
@@ -106,6 +112,66 @@ async def me(
         permissions=sorted(list(perms)),
         created_at=user.created_at.isoformat(),
     )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    data: UpdateProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+) -> UserResponse:
+    """
+    Update the authenticated user's profile details (full_name, email, phone_number).
+    """
+    if data.email and data.email.lower() != user.email.lower():
+        existing_res = await db.execute(select(User).where(User.email == data.email.lower()))
+        if existing_res.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email is already registered by another account")
+        user.email = data.email.lower()
+
+    if data.full_name is not None:
+        user.full_name = data.full_name.strip() if data.full_name else None
+
+    if data.phone_number is not None:
+        user.phone_number = data.phone_number.strip() if data.phone_number else None
+
+    await db.commit()
+    await db.refresh(user)
+
+    perms = await get_effective_user_permissions(user, db)
+    role_slug = user.role.slug if user.role else "user"
+    role_name = user.role.name if user.role else "Standard User"
+
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+        is_active=user.is_active,
+        is_superuser=user.is_superuser,
+        role_slug=role_slug,
+        role_name=role_name,
+        permissions=sorted(list(perms)),
+        created_at=user.created_at.isoformat(),
+    )
+
+
+@router.post("/change-password")
+async def change_password(
+    data: ChangePasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+) -> dict[str, str]:
+    """
+    Change password for the currently authenticated user.
+    """
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    user.password_hash = hash_password(data.new_password)
+    await db.commit()
+
+    return {"message": "Password changed successfully"}
 
 
 # ─── RBAC Matrix & User Administration Endpoints ──────────────────────────────
@@ -294,6 +360,8 @@ async def admin_list_users(
         response.append(AdminUserResponse(
             id=uid,
             email=user.email,
+            full_name=user.full_name,
+            phone_number=user.phone_number,
             is_active=user.is_active,
             is_superuser=user.is_superuser,
             role_slug=role_slug,
@@ -308,6 +376,111 @@ async def admin_list_users(
         ))
 
     return response
+
+
+@router.patch("/admin/users/{target_user_id}", response_model=AdminUserResponse)
+async def admin_update_user(
+    target_user_id: str,
+    data: AdminUpdateUserRequest,
+    db: AsyncSession = Depends(get_db),
+    _: str = Depends(get_current_superuser_id),
+) -> AdminUserResponse:
+    """
+    Update target user's details (full_name, email, phone_number, is_active, role_slug, custom_permissions, plan_id).
+    Superadmin only.
+    """
+    from app.modules.billing.models import Plan, Subscription
+
+    try:
+        user_uuid = uuid.UUID(target_user_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="User not found") from None
+
+    user_res = await db.execute(select(User).where(User.id == user_uuid))
+    user = user_res.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if data.email and data.email.lower() != user.email.lower():
+        existing_res = await db.execute(select(User).where(User.email == data.email.lower()))
+        if existing_res.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email is already registered by another account")
+        user.email = data.email.lower()
+
+    if data.full_name is not None:
+        user.full_name = data.full_name.strip() if data.full_name else None
+
+    if data.phone_number is not None:
+        user.phone_number = data.phone_number.strip() if data.phone_number else None
+
+    if data.is_active is not None:
+        if user.is_superuser and not data.is_active:
+            raise HTTPException(status_code=403, detail="Cannot deactivate a superuser")
+        user.is_active = data.is_active
+
+    if data.role_slug:
+        role_res = await db.execute(select(Role).where(Role.slug == data.role_slug))
+        role = role_res.scalar_one_or_none()
+        if not role:
+            raise HTTPException(status_code=404, detail=f"Role '{data.role_slug}' not found")
+        user.role_id = role.id
+
+    if data.custom_permissions is not None:
+        user.custom_permissions = data.custom_permissions
+
+    if data.plan_id:
+        try:
+            plan_uuid = uuid.UUID(data.plan_id)
+            plan_res = await db.execute(select(Plan).where(Plan.id == plan_uuid))
+            plan = plan_res.scalar_one_or_none()
+            if plan:
+                sub_res = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
+                sub = sub_res.scalars().first()
+                if sub:
+                    sub.plan_id = plan.id
+                else:
+                    sub = Subscription(user_id=user.id, plan_id=plan.id, status="active")
+                    db.add(sub)
+        except ValueError:
+            pass
+
+    await db.commit()
+    await db.refresh(user)
+
+    sub_res = await db.execute(
+        select(Subscription, Plan)
+        .join(Plan, Plan.id == Subscription.plan_id)
+        .where(Subscription.user_id == user.id)
+        .order_by(Subscription.created_at.desc())
+    )
+    sub_row = sub_res.first()
+
+    plan_name = sub_row[1].name if sub_row else "No Plan"
+    plan_slug = sub_row[1].slug if sub_row else None
+    plan_id_str = str(sub_row[1].id) if sub_row else None
+    sub_status = sub_row[0].status if sub_row else "none"
+
+    user_perms = await get_effective_user_permissions(user, db)
+    role_slug = user.role.slug if user.role else "user"
+    role_name = user.role.name if user.role else "Standard User"
+
+    return AdminUserResponse(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        phone_number=user.phone_number,
+        is_active=user.is_active,
+        is_superuser=user.is_superuser,
+        role_slug=role_slug,
+        role_name=role_name,
+        custom_permissions=user.custom_permissions or [],
+        permissions=sorted(list(user_perms)),
+        created_at=user.created_at.isoformat(),
+        plan_name=plan_name,
+        plan_slug=plan_slug,
+        plan_id=plan_id_str,
+        subscription_status=sub_status,
+    )
 
 
 @router.patch("/admin/users/{target_user_id}/role", response_model=AdminUserResponse)
