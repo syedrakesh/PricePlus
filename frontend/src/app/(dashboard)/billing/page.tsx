@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { billingApi, Subscription, Plan } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -12,16 +14,17 @@ import styles from './page.module.css';
 // ─── Usage Meter ──────────────────────────────────────────────────────────────
 
 function UsageMeter({ label, current, max }: { label: string; current: number; max: number }) {
-  const pct = max > 0 ? Math.min((current / max) * 100, 100) : 0;
+  const isUnlimited = max >= 99999;
+  const pct = !isUnlimited && max > 0 ? Math.min((current / max) * 100, 100) : 0;
   const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#10b981';
   return (
     <div className={styles.meter}>
       <div className={styles.meterHeader}>
         <span className={styles.meterLabel}>{label}</span>
-        <span className={styles.meterCount}>{current} / {max}</span>
+        <span className={styles.meterCount}>{current} / {isUnlimited ? '∞ Unlimited' : max}</span>
       </div>
       <div className={styles.meterTrack}>
-        <div className={styles.meterFill} style={{ width: `${pct}%`, background: color }} />
+        <div className={styles.meterFill} style={{ width: `${isUnlimited ? 100 : pct}%`, background: isUnlimited ? '#38bdf8' : color }} />
       </div>
     </div>
   );
@@ -47,7 +50,6 @@ function PlanCard({
   loading: boolean;
 }) {
   const isCurrent = plan.id === currentPlanId;
-  const currentPrice = 0; // will be compared below
   const isPaid = (plan.price_usd ?? 0) > 0;
   const isFree = !isPaid;
 
@@ -64,67 +66,65 @@ function PlanCard({
     <Card glow={isCurrent} className={[styles.planCard, isCurrent ? styles.planCardCurrent : ''].join(' ')}>
       <CardBody>
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {isCurrent && <div className={styles.currentBadge}>Current plan</div>}
-        <h3 className={styles.planName}>{plan.name}</h3>
-        <div className={styles.planPrice}>
-          {isFree ? (
-            <span className={styles.planPriceVal}>Free</span>
-          ) : (
-            <>
-              <span className={styles.planPriceVal}>${plan.price_usd}</span>
-              <span className={styles.planPricePer}>/mo</span>
-            </>
-          )}
-        </div>
-        <ul className={styles.planFeatures}>
-          {features.map(f => (
-            <li key={f} className={styles.planFeature}><span className={styles.check}>✓</span> {f}</li>
-          ))}
-        </ul>
+          {isCurrent && <div className={styles.currentBadge}>Current plan</div>}
+          <h3 className={styles.planName}>{plan.name}</h3>
+          <div className={styles.planPrice}>
+            {isFree ? (
+              <span className={styles.planPriceVal}>Free</span>
+            ) : (
+              <>
+                <span className={styles.planPriceVal}>${plan.price_usd}</span>
+                <span className={styles.planPricePer}>/mo</span>
+              </>
+            )}
+          </div>
+          <ul className={styles.planFeatures}>
+            {features.map(f => (
+              <li key={f} className={styles.planFeature}><span className={styles.check}>✓</span> {f}</li>
+            ))}
+          </ul>
 
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {isCurrent ? (
-            <>
-              <div className={styles.currentPill}>✓ Active Plan</div>
-              {/* Cancel button — only for paid plans */}
-              {isPaid && currentStatus !== 'canceled' && (
+          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {isCurrent ? (
+              <>
+                <div className={styles.currentPill}>✓ Active Plan</div>
+                {isPaid && currentStatus !== 'canceled' && (
+                  <Button
+                    id={`cancel-plan-${plan.id}`}
+                    size="sm"
+                    variant="secondary"
+                    onClick={onCancel}
+                    disabled={loading}
+                    style={{ fontSize: '0.8rem', opacity: 0.75 }}
+                  >
+                    Cancel Subscription
+                  </Button>
+                )}
+              </>
+            ) : isFree ? (
+              currentStatus !== 'canceled' && (
                 <Button
-                  id={`cancel-plan-${plan.id}`}
+                  id={`downgrade-free-${plan.id}`}
                   size="sm"
                   variant="secondary"
-                  onClick={onCancel}
+                  onClick={() => onDowngrade(plan.id)}
                   disabled={loading}
-                  style={{ fontSize: '0.8rem', opacity: 0.75 }}
                 >
-                  Cancel Subscription
+                  Switch to Free
                 </Button>
-              )}
-            </>
-          ) : isFree ? (
-            /* Downgrade to Free */
-            currentStatus !== 'canceled' && (
+              )
+            ) : isPaid ? (
               <Button
-                id={`downgrade-free-${plan.id}`}
+                id={`upgrade-plan-${plan.id}`}
                 size="sm"
-                variant="secondary"
-                onClick={() => onDowngrade(plan.id)}
+                onClick={() => onUpgrade(plan.id)}
                 disabled={loading}
+                style={{ width: '100%' }}
               >
-                Switch to Free
+                Switch to {plan.name}
               </Button>
-            )
-          ) : isPaid ? (
-            <Button
-              id={`upgrade-plan-${plan.id}`}
-              size="sm"
-              onClick={() => onUpgrade(plan.id)}
-              disabled={loading}
-              style={{ width: '100%' }}
-            >
-              Switch to {plan.name}
-            </Button>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
         </div>
       </CardBody>
     </Card>
@@ -138,9 +138,6 @@ function StatusBanner({ subscription }: { subscription: Subscription }) {
     return (
       <div className={styles.warningBanner}>
         ⚠️ <strong>Payment failed.</strong> Your subscription is past due. Please update your payment method to avoid service interruption.
-        {subscription.stripe_customer_id && (
-          <span> Use <strong>Manage Subscription</strong> to update billing.</span>
-        )}
       </div>
     );
   }
@@ -170,6 +167,7 @@ function StatusBanner({ subscription }: { subscription: Subscription }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BillingPage() {
+  const { user, isAdmin } = useAuth();
   const { data: plans, isLoading: plansLoading } = useSWR('plans', () => billingApi.plans());
   const { data: usage, isLoading: usageLoading } = useSWR('user-usage', () => billingApi.getUsage());
   const { data: subscription, mutate: mutateSubscription } = useSWR('subscription', () => billingApi.subscription());
@@ -200,7 +198,6 @@ export default function BillingPage() {
         `${origin}/billing?success=1`,
         `${origin}/billing`,
       );
-      // If Stripe redirect — navigate away; if direct upgrade — same page
       if (checkout_url === `${origin}/billing?success=1`) {
         showToast('success', 'Plan upgraded successfully!');
         await refreshAll();
@@ -253,10 +250,8 @@ export default function BillingPage() {
     }
   }
 
-  // Check success redirect from Stripe
   if (typeof window !== 'undefined' && window.location.search.includes('success=1')) {
     showToast('success', 'Payment successful! Your plan has been upgraded.');
-    // Remove query param
     window.history.replaceState({}, '', '/billing');
   }
 
@@ -265,11 +260,58 @@ export default function BillingPage() {
   const currentPlanId = usage?.plan_id;
   const currentStatus = subscription?.status;
   const hasStripe = !!(subscription?.stripe_customer_id);
-  const isPaidDirectSub = subscription && !subscription.is_direct === false && (subscription.plan?.price_usd ?? 0) > 0;
 
+  // ─── SuperAdmin Dedicated View ──────────────────────────────────────────────
+  if (isAdmin || user?.is_superuser) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.header}>
+          <div>
+            <h1>⚡ Billing & Platform Administration</h1>
+            <p>System Administrator Control Panel — Unlimited Operational Access</p>
+          </div>
+          <Badge variant="accent">System Administrator</Badge>
+        </div>
+
+        <Card glow>
+          <CardHeader>
+            <h3>👑 System Administrator Account</h3>
+            <Badge variant="success">Unlimited Access</Badge>
+          </CardHeader>
+          <CardBody>
+            <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+              As a System Administrator, your account automatically bypasses all customer store and product quota limits.
+              You do not require a paid customer subscription.
+            </p>
+
+            <div className={styles.meters}>
+              <UsageMeter label="Competitor Stores" current={usage?.current_stores ?? 0} max={999999} />
+              <UsageMeter label="Tracked Products" current={usage?.current_tracked_products ?? 0} max={999999} />
+              <div style={{ fontSize: '0.875rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                ⚡ Operational Polling Speed: <strong style={{ color: '#38bdf8' }}>1 min (Max Speed)</strong>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <Link href="/admin/plans">
+                <Button variant="primary">👑 Manage Customer Plans</Button>
+              </Link>
+              <Link href="/admin/users">
+                <Button variant="secondary">👥 Manage User Subscriptions</Button>
+              </Link>
+              <Link href="/admin/permissions">
+                <Button variant="secondary">🔒 System RBAC Matrix</Button>
+              </Link>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
+  // ─── Regular Customer View ──────────────────────────────────────────────────
   return (
     <div className={styles.page}>
-      {/* Toast notification */}
       {toast && (
         <div className={toast.type === 'success' ? styles.toastSuccess : styles.toastError}>
           {toast.msg}
@@ -300,10 +342,8 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Status banners */}
       {subscription && <StatusBanner subscription={subscription} />}
 
-      {/* Usage meters */}
       {usage && (
         <Card>
           <CardHeader>
@@ -328,7 +368,6 @@ export default function BillingPage() {
         </Card>
       )}
 
-      {/* Plan cards */}
       <div className={styles.plans}>
         {plans?.map(plan => (
           <PlanCard

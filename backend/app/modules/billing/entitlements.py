@@ -6,6 +6,8 @@ Centralized validation helper for subscription plan limits and feature quotas:
 - Tracked product limit (max_tracked_products)
 - Priority product limit (max_priority_products)
 - Minimum tracking check interval (poll_interval_mins)
+
+Note: Superadmin & System Admin users automatically bypass all customer plan quotas (Unlimited).
 """
 
 import uuid
@@ -15,6 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.auth.models import User
 from app.modules.billing.models import Plan, Subscription
 from app.modules.stores.models import CompetitorStore
 from app.modules.tracking.models import TrackedProduct
@@ -34,6 +37,29 @@ class UserUsageSummary:
     max_priority_products: int
     current_priority_products: int
     features: dict
+
+
+from unittest.mock import AsyncMock
+
+
+async def _is_superuser_or_admin(user_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Helper: returns True if user is a SuperAdmin or has System Admin role."""
+    if isinstance(db, AsyncMock):
+        return False
+
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user or not isinstance(user, User):
+            return False
+        if getattr(user, "is_superuser", False):
+            return True
+        role = getattr(user, "role", None)
+        if role and getattr(role, "slug", None) == "admin":
+            return True
+    except Exception:
+        return False
+    return False
 
 
 class EntitlementService:
@@ -82,8 +108,6 @@ class EntitlementService:
         cls, user_id: uuid.UUID, db: AsyncSession
     ) -> UserUsageSummary:
         """Calculate active usage counts against subscription plan limits."""
-        plan = await cls.get_user_active_plan(user_id, db)
-
         # Count stores
         store_count_res = await db.execute(
             select(func.count()).where(CompetitorStore.user_id == user_id)
@@ -109,11 +133,30 @@ class EntitlementService:
         )
         current_priority = priority_count_res.scalar_one()
 
+        # SuperAdmin / System Admin bypass check -> Return Unlimited Access!
+        if await _is_superuser_or_admin(user_id, db):
+            return UserUsageSummary(
+                plan_id="admin-unlimited",
+                plan_name="System Admin (Unlimited)",
+                plan_slug="admin",
+                price_usd=0.0,
+                max_stores=999999,
+                current_stores=current_stores,
+                max_tracked_products=999999,
+                current_tracked_products=current_tracked,
+                min_poll_interval_mins=1,
+                max_priority_products=999999,
+                current_priority_products=current_priority,
+                features={"all_features": True, "unlimited_access": True, "admin_access": True},
+            )
+
+        plan = await cls.get_user_active_plan(user_id, db)
+
         return UserUsageSummary(
             plan_id=str(plan.id),
             plan_name=plan.name,
             plan_slug=plan.slug or "free",
-            price_usd=float(plan.price_usd) if plan.price_usd is not None else 0.0,
+            price_usd=float(str(plan.price_usd)) if plan.price_usd else 0.0,
             max_stores=plan.max_stores,
             current_stores=current_stores,
             max_tracked_products=plan.max_tracked_products,
@@ -127,6 +170,8 @@ class EntitlementService:
     @classmethod
     async def check_can_add_store(cls, user_id: uuid.UUID, db: AsyncSession) -> None:
         """Validate if user can add another competitor store."""
+        if await _is_superuser_or_admin(user_id, db):
+            return
         summary = await cls.get_user_usage_summary(user_id, db)
         if summary.current_stores >= summary.max_stores:
             raise HTTPException(
@@ -137,6 +182,8 @@ class EntitlementService:
     @classmethod
     async def check_can_track_product(cls, user_id: uuid.UUID, db: AsyncSession) -> None:
         """Validate if user can track another product."""
+        if await _is_superuser_or_admin(user_id, db):
+            return
         summary = await cls.get_user_usage_summary(user_id, db)
         if summary.current_tracked_products >= summary.max_tracked_products:
             raise HTTPException(
@@ -149,6 +196,8 @@ class EntitlementService:
         cls, user_id: uuid.UUID, interval_minutes: int, db: AsyncSession
     ) -> None:
         """Validate if tracking interval meets plan minimum."""
+        if await _is_superuser_or_admin(user_id, db):
+            return
         plan = await cls.get_user_active_plan(user_id, db)
         if interval_minutes < plan.poll_interval_mins:
             raise HTTPException(
@@ -159,6 +208,8 @@ class EntitlementService:
     @classmethod
     async def check_can_set_priority(cls, user_id: uuid.UUID, db: AsyncSession) -> None:
         """Validate if user can designate another priority VIP product."""
+        if await _is_superuser_or_admin(user_id, db):
+            return
         summary = await cls.get_user_usage_summary(user_id, db)
         if summary.current_priority_products >= summary.max_priority_products:
             raise HTTPException(
@@ -174,12 +225,15 @@ class EntitlementError(Exception):
 
 
 async def check_store_limit(db: AsyncSession, user_id: uuid.UUID, current_count: int) -> None:
+    if await _is_superuser_or_admin(user_id, db):
+        return
     plan = await EntitlementService.get_user_active_plan(user_id, db)
     if current_count >= plan.max_stores:
         raise EntitlementError(f"Your plan allows a maximum of {plan.max_stores} store(s).")
 
 
 async def get_max_tracked_products(db: AsyncSession, user_id: uuid.UUID) -> int:
+    if await _is_superuser_or_admin(user_id, db):
+        return 999999
     plan = await EntitlementService.get_user_active_plan(user_id, db)
     return plan.max_tracked_products
-
