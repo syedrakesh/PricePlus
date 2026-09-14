@@ -15,12 +15,19 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import User
 from app.modules.billing.models import Plan, Subscription
 from app.modules.stores.models import CompetitorStore
 from app.modules.tracking.models import TrackedProduct
+
+
+class EntitlementError(Exception):
+    def __init__(self, message: str, status_code: int = 403) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @dataclass
@@ -48,7 +55,9 @@ async def _is_superuser_or_admin(user_id: uuid.UUID, db: AsyncSession) -> bool:
         return False
 
     try:
-        result = await db.execute(select(User).where(User.id == user_id))
+        result = await db.execute(
+            select(User).options(selectinload(User.role)).where(User.id == user_id)
+        )
         user = result.scalar_one_or_none()
         if not user or not isinstance(user, User):
             return False
@@ -152,11 +161,16 @@ class EntitlementService:
 
         plan = await cls.get_user_active_plan(user_id, db)
 
+        try:
+            price_usd_val = float(str(plan.price_usd)) if plan.price_usd is not None else 0.0
+        except (ValueError, TypeError):
+            price_usd_val = 0.0
+
         return UserUsageSummary(
             plan_id=str(plan.id),
             plan_name=plan.name,
             plan_slug=plan.slug or "free",
-            price_usd=float(str(plan.price_usd)) if plan.price_usd else 0.0,
+            price_usd=price_usd_val,
             max_stores=plan.max_stores,
             current_stores=current_stores,
             max_tracked_products=plan.max_tracked_products,
@@ -174,9 +188,8 @@ class EntitlementService:
             return
         summary = await cls.get_user_usage_summary(user_id, db)
         if summary.current_stores >= summary.max_stores:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Store limit reached ({summary.current_stores}/{summary.max_stores}) for {summary.plan_name}. Please upgrade your plan.",
+            raise EntitlementError(
+                f"Store limit reached ({summary.current_stores}/{summary.max_stores}) for {summary.plan_name}. Please upgrade your plan."
             )
 
     @classmethod
@@ -186,9 +199,8 @@ class EntitlementService:
             return
         summary = await cls.get_user_usage_summary(user_id, db)
         if summary.current_tracked_products >= summary.max_tracked_products:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Tracked product limit reached ({summary.current_tracked_products}/{summary.max_tracked_products}) for {summary.plan_name}. Please upgrade your plan.",
+            raise EntitlementError(
+                f"Tracked product limit reached ({summary.current_tracked_products}/{summary.max_tracked_products}) for {summary.plan_name}. Please upgrade your plan."
             )
 
     @classmethod

@@ -98,45 +98,47 @@ def _make_db(
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
-    db.execute = AsyncMock()
 
-    # Each execute call returns a different result depending on context
-    # We use side_effect with a list of return values
-    call_returns = []
-
-    # 1st call: store ownership check
-    store_result = MagicMock()
-    store_result.scalar_one_or_none.return_value = store
-    call_returns.append(store_result)
-
-    # 2nd call: discovered product lookup
-    product_result = MagicMock()
-    product_result.scalar_one_or_none.return_value = product
-    call_returns.append(product_result)
-
-    # 3rd call: existing tracked check
-    tracked_result = MagicMock()
-    tracked_result.scalar_one_or_none.return_value = existing_tracked
-    call_returns.append(tracked_result)
-
-    # 4th call: active count
-    count_result = MagicMock()
-    count_result.scalar_one.return_value = active_count
-    call_returns.append(count_result)
-
-    # 5th call: plan limit (from entitlement service)
     plan_mock = MagicMock()
+    plan_mock.name = "Free Plan"
     plan_mock.max_tracked_products = max_products
     plan_mock.max_stores = 2
     plan_mock.poll_interval_mins = 60
     plan_mock.max_priority_products = 0
+    plan_mock.price_usd = 0.0
+    plan_mock.slug = "free"
+    plan_mock.features = {}
 
-    plan_result = MagicMock()
-    plan_result.scalar_one_or_none.return_value = max_products
-    plan_result.scalars.return_value.first.return_value = plan_mock
-    call_returns.append(plan_result)
+    async def side_effect(stmt, *args, **kwargs):
+        stmt_str = str(stmt).lower()
+        res = MagicMock()
+        res.scalar_one_or_none.return_value = None
+        res.scalar_one.return_value = 0
+        res.scalars.return_value.first.return_value = plan_mock
+        res.scalars.return_value.all.return_value = []
+        res.all.return_value = []
 
-    db.execute.side_effect = call_returns
+        if "competitor_stores" in stmt_str:
+            if "count" in stmt_str:
+                res.scalar_one.return_value = 1
+            else:
+                res.scalar_one_or_none.return_value = store
+        elif "discovered_products" in stmt_str:
+            res.scalar_one_or_none.return_value = product
+        elif "tracked_products" in stmt_str:
+            if "count" in stmt_str:
+                res.scalar_one.return_value = active_count
+            else:
+                res.scalar_one_or_none.return_value = existing_tracked
+        elif "plans" in stmt_str or "subscriptions" in stmt_str:
+            res.scalars.return_value.first.return_value = plan_mock
+            res.scalar_one_or_none.return_value = plan_mock
+        elif "users" in stmt_str:
+            res.scalar_one_or_none.return_value = None
+
+        return res
+
+    db.execute = AsyncMock(side_effect=side_effect)
     return db
 
 

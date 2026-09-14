@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.billing.entitlements import (
     EntitlementError,
+    EntitlementService,
     get_max_tracked_products,
 )
 from app.modules.discovery.models import DiscoveredProduct
@@ -132,13 +133,7 @@ async def track_product(
             return existing
         else:
             # Was previously untracked — reactivate, but check limit first
-            current_count = await _count_active_tracked(db, user_id)
-            max_products = await get_max_tracked_products(db, user_id)
-            if current_count >= max_products:
-                raise EntitlementError(
-                    f"Your plan allows a maximum of {max_products} tracked product(s). "
-                    "Please upgrade or untrack some products."
-                )
+            await EntitlementService.check_can_track_product(user_id, db)
             existing.is_active = True
             existing.updated_at = datetime.now(UTC)
             await db.commit()
@@ -151,13 +146,7 @@ async def track_product(
             return existing
 
     # New tracking — check entitlement
-    current_count = await _count_active_tracked(db, user_id)
-    max_products = await get_max_tracked_products(db, user_id)
-    if current_count >= max_products:
-        raise EntitlementError(
-            f"Your plan allows a maximum of {max_products} tracked product(s). "
-            "Please upgrade or untrack some products."
-        )
+    await EntitlementService.check_can_track_product(user_id, db)
 
     tracked = TrackedProduct(
         id=uuid.uuid4(),
@@ -205,6 +194,9 @@ async def track_multiple_products(
 
     current_count = await _count_active_tracked(db, user_id)
     max_products = await get_max_tracked_products(db, user_id)
+
+    if current_count >= max_products:
+        await EntitlementService.check_can_track_product(user_id, db)
 
     for product_id in discovered_product_ids:
         if current_count >= max_products:
@@ -280,8 +272,7 @@ async def track_all_products(
     Track ALL discovered products for a store, up to the plan limit.
 
     Does not fail when the limit is hit — simply stops and reports how many
-    were tracked vs skipped. This is intentional: users should be able to
-    track as many as their plan allows without an error response.
+    were tracked vs skipped. If called when limit is ALREADY hit, raises EntitlementError.
 
     Returns TrackAllResponse with counts.
     """
@@ -305,6 +296,9 @@ async def track_all_products(
 
     current_count = await _count_active_tracked(db, user_id)
     max_products = await get_max_tracked_products(db, user_id)
+
+    if current_count >= max_products:
+        await EntitlementService.check_can_track_product(user_id, db)
 
     tracked_count = 0
     already_tracked = 0

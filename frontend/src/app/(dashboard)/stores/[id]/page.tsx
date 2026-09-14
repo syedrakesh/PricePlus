@@ -2,7 +2,8 @@
 
 import { useState, use } from 'react';
 import useSWR from 'swr';
-import { productsApi, trackingApi } from '@/lib/api';
+import Link from 'next/link';
+import { billingApi, productsApi, trackingApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -32,6 +33,7 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
   const [searchQuery, setSearchQuery] = useState('');
   const [minPrice, setMinPrice] = useState('');
   const [maxPrice, setMaxPrice] = useState('');
+  const [error, setError] = useState('');
 
   const activeFilters = {
     q: searchQuery.trim() || undefined,
@@ -44,9 +46,25 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     () => productsApi.list(id, page, pageSize, activeFilters)
   );
 
+  const { data: entitlements, mutate: mutateEntitlements } = useSWR(
+    'entitlements',
+    () => billingApi.entitlements()
+  );
+
   const [tracking, setTracking] = useState<Record<string, boolean>>({});
 
+  const isProductLimitReached = !!(
+    entitlements && entitlements.current_tracked_products >= entitlements.max_tracked_products
+  );
+
   async function handleTrack(discoveredProductId: string) {
+    setError('');
+
+    if (isProductLimitReached) {
+      setError(`Tracked product limit reached (${entitlements?.current_tracked_products}/${entitlements?.max_tracked_products}) for ${entitlements?.plan_name} plan. Please upgrade your plan.`);
+      return;
+    }
+
     setTracking(t => ({ ...t, [discoveredProductId]: true }));
     try {
       await trackingApi.track(discoveredProductId);
@@ -62,8 +80,9 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         );
       }
       await mutate();
-    } catch (err) {
-      console.error('Failed to track product:', err);
+      await mutateEntitlements();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to track product');
     } finally {
       setTracking(t => ({ ...t, [discoveredProductId]: false }));
     }
@@ -101,12 +120,40 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     <div className={styles.page}>
       <div className={styles.header}>
         <div>
-          <h1>Store Products</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h1>Store Products</h1>
+            {entitlements && (
+              <Badge variant={isProductLimitReached ? 'warning' : 'accent'}>
+                {entitlements.current_tracked_products} / {entitlements.max_tracked_products} Products Tracked
+              </Badge>
+            )}
+          </div>
           <p className={styles.sub}>
             {isLoading ? 'Loading…' : `${total} products found · Showing page ${page} of ${totalPages}`}
           </p>
         </div>
       </div>
+
+      {(isProductLimitReached || error) && (
+        <div style={{
+          padding: '1rem',
+          borderRadius: '8px',
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '1rem'
+        }}>
+          <span style={{ color: '#ef4444', fontSize: '0.9rem', fontWeight: 500 }}>
+            ⚠️ {error || `Tracked product limit reached (${entitlements?.current_tracked_products}/${entitlements?.max_tracked_products}) on your ${entitlements?.plan_name} plan.`}
+          </span>
+          <Link href="/billing">
+            <Button size="sm" variant="primary">Upgrade Plan</Button>
+          </Link>
+        </div>
+      )}
 
       {/* Search & Filter Bar */}
       <Card className={styles.filterCard}>
@@ -214,13 +261,14 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <Button
                     size="sm"
-                    variant={product.is_tracked ? 'secondary' : 'primary'}
+                    variant={product.is_tracked ? 'secondary' : isProductLimitReached ? 'danger' : 'primary'}
                     style={{ width: '100%', marginTop: '12px' }}
                     loading={tracking[product.id]}
-                    disabled={product.is_tracked}
+                    disabled={product.is_tracked || isProductLimitReached}
+                    title={isProductLimitReached && !product.is_tracked ? "Tracked product limit reached. Upgrade your plan." : undefined}
                     onClick={() => !product.is_tracked && handleTrack(product.id)}
                   >
-                    {product.is_tracked ? '✓ Tracking' : 'Track Product'}
+                    {product.is_tracked ? '✓ Tracking' : isProductLimitReached ? 'Limit Reached' : 'Track Product'}
                   </Button>
                 </CardBody>
               </Card>

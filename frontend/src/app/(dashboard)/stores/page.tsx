@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { storesApi } from '@/lib/api';
+import { billingApi, storesApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -25,6 +25,11 @@ export default function StoresPage() {
     }
   );
 
+  const { data: entitlements, mutate: mutateEntitlements } = useSWR(
+    'entitlements',
+    () => billingApi.entitlements()
+  );
+
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -32,15 +37,26 @@ export default function StoresPage() {
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
 
+  const isStoreLimitReached = !!(
+    entitlements && entitlements.current_stores >= entitlements.max_stores
+  );
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (isStoreLimitReached) {
+      setError(`Store limit reached (${entitlements?.current_stores}/${entitlements?.max_stores}) for ${entitlements?.plan_name} plan. Please upgrade your plan.`);
+      return;
+    }
+
     setAdding(true);
     try {
       const store = await storesApi.create(url, name || undefined);
       await storesApi.triggerDiscovery(store.id);
       setUrl(''); setName(''); setShowForm(false);
       mutate();
+      mutateEntitlements();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to add store');
     } finally {
@@ -52,6 +68,7 @@ export default function StoresPage() {
     if (!confirm('Remove this store and all its tracked products?')) return;
     await storesApi.delete(id);
     mutate();
+    mutateEntitlements();
   }
 
   async function handleDiscover(id: string) {
@@ -78,10 +95,20 @@ export default function StoresPage() {
     <div className={styles.page}>
       <div className={styles.header}>
         <div>
-          <h1>Competitor Stores</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <h1>Competitor Stores</h1>
+            {entitlements && (
+              <Badge variant={isStoreLimitReached ? 'warning' : 'accent'}>
+                {entitlements.current_stores} / {entitlements.max_stores} Stores
+              </Badge>
+            )}
+          </div>
           <p>Add Shopify stores to discover and track their products</p>
         </div>
-        <Button onClick={() => setShowForm(v => !v)} variant={showForm ? 'secondary' : 'primary'}>
+        <Button
+          onClick={() => setShowForm(v => !v)}
+          variant={showForm ? 'secondary' : isStoreLimitReached ? 'danger' : 'primary'}
+        >
           {showForm ? 'Cancel' : '+ Add Store'}
         </Button>
       </div>
@@ -90,6 +117,26 @@ export default function StoresPage() {
         <Card glow>
           <CardHeader><h3>Add Competitor Store</h3></CardHeader>
           <CardBody>
+            {isStoreLimitReached && (
+              <div style={{
+                padding: '1rem',
+                borderRadius: '8px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                marginBottom: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem'
+              }}>
+                <span style={{ color: '#ef4444', fontSize: '0.9rem', fontWeight: 500 }}>
+                  ⚠️ Store limit reached ({entitlements?.current_stores}/{entitlements?.max_stores}) on your {entitlements?.plan_name} plan.
+                </span>
+                <Link href="/billing">
+                  <Button size="sm" variant="primary">Upgrade Plan</Button>
+                </Link>
+              </div>
+            )}
             <form onSubmit={handleAdd} className={styles.form}>
               <Input
                 label="Store URL"
@@ -98,6 +145,7 @@ export default function StoresPage() {
                 onChange={e => setUrl(e.target.value)}
                 placeholder="https://competitor.myshopify.com"
                 required
+                disabled={isStoreLimitReached}
                 hint="Any public Shopify store URL"
               />
               <Input
@@ -105,9 +153,21 @@ export default function StoresPage() {
                 value={name}
                 onChange={e => setName(e.target.value)}
                 placeholder="e.g. Acme Store"
+                disabled={isStoreLimitReached}
               />
-              {error && <p className={styles.error}>{error}</p>}
-              <Button type="submit" loading={adding}>Add Store</Button>
+              {error && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <p className={styles.error} style={{ margin: 0 }}>{error}</p>
+                  {error.includes('limit reached') && (
+                    <Link href="/billing">
+                      <Button size="sm" variant="primary">Upgrade</Button>
+                    </Link>
+                  )}
+                </div>
+              )}
+              <Button type="submit" loading={adding} disabled={isStoreLimitReached}>
+                Add Store
+              </Button>
             </form>
           </CardBody>
         </Card>
