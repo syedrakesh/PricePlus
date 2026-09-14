@@ -13,7 +13,7 @@ Design decisions:
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -60,6 +60,13 @@ class TrackedProduct(Base):
         default=True,
         nullable=False,
         index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="active",
+        nullable=False,
+        index=True,
+        comment="active | paused | paused_over_limit",
     )
     tracking_interval_minutes: Mapped[int | None] = mapped_column(
         Integer,

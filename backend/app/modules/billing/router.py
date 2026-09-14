@@ -139,11 +139,14 @@ async def get_user_usage(
         price_usd=summary.price_usd,
         max_stores=summary.max_stores,
         current_stores=summary.current_stores,
+        paused_stores=summary.paused_stores,
         max_tracked_products=summary.max_tracked_products,
         current_tracked_products=summary.current_tracked_products,
+        paused_tracked_products=summary.paused_tracked_products,
         min_poll_interval_mins=summary.min_poll_interval_mins,
         max_priority_products=summary.max_priority_products,
         current_priority_products=summary.current_priority_products,
+        is_over_limit=summary.is_over_limit,
         features=summary.features,
     )
 
@@ -189,9 +192,7 @@ async def get_entitlements(
     Use this to power upgrade prompts and usage meters in the UI.
     """
     user_id = uuid.UUID(user_id_str)
-
-    # Resolve active plan via EntitlementService (handles trialing + active)
-    plan = await EntitlementService.get_user_active_plan(user_id, db)
+    summary = await EntitlementService.get_user_usage_summary(user_id, db)
 
     # Resolve subscription status
     sub_result = await db.execute(
@@ -206,27 +207,19 @@ async def get_entitlements(
     sub = sub_result.scalar_one_or_none()
     subscription_status = sub.status if sub else "active"  # free = active
 
-    # Count actual usage
-    stores_count_res = await db.execute(
-        select(func.count()).where(CompetitorStore.user_id == user_id)
-    )
-    tracked_count_res = await db.execute(
-        select(func.count()).where(
-            TrackedProduct.user_id == user_id,
-            TrackedProduct.is_active == True,  # noqa: E712
-        )
-    )
-
     return EntitlementResponse(
-        plan_name=plan.name,
-        plan_slug=plan.slug or "free",
-        plan_id=str(plan.id),
-        max_stores=plan.max_stores,
-        current_stores=stores_count_res.scalar_one(),
-        max_tracked_products=plan.max_tracked_products,
-        current_tracked_products=tracked_count_res.scalar_one(),
-        poll_interval_mins=plan.poll_interval_mins,
+        plan_name=summary.plan_name,
+        plan_slug=summary.plan_slug,
+        plan_id=summary.plan_id,
+        max_stores=summary.max_stores,
+        current_stores=summary.current_stores,
+        paused_stores=summary.paused_stores,
+        max_tracked_products=summary.max_tracked_products,
+        current_tracked_products=summary.current_tracked_products,
+        paused_tracked_products=summary.paused_tracked_products,
+        poll_interval_mins=summary.min_poll_interval_mins,
         subscription_status=subscription_status,
+        is_over_limit=summary.is_over_limit,
     )
 
 
@@ -386,6 +379,7 @@ async def downgrade_plan(
         db.add(sub)
 
     await db.commit()
+    await EntitlementService.sync_user_plan_entitlements(user_id, db)
     await db.refresh(sub)
 
     return SubscriptionResponse.from_orm_model(sub, plan)
@@ -641,6 +635,7 @@ async def admin_assign_user_subscription(
     )
 
     await db.commit()
+    await EntitlementService.sync_user_plan_entitlements(user_uuid, db)
     await db.refresh(sub)
 
     logger.info(

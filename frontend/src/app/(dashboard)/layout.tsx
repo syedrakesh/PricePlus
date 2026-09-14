@@ -6,6 +6,7 @@ import { isLoggedIn } from '@/lib/auth';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { Sidebar } from '@/components/ui/Sidebar';
 import { PageLoader } from '@/components/ui/Spinner';
+import { OverQuotaBanner } from '@/components/ui/OverQuotaBanner';
 import styles from './DashboardLayout.module.css';
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -27,7 +28,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <div className={styles.shell}>
       <Sidebar />
-      <main className={styles.main}>{children}</main>
+      <main className={styles.main}>
+        <OverQuotaBanner />
+        {children}
+      </main>
     </div>
   );
 }

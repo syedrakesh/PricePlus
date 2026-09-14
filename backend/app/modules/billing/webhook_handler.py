@@ -73,6 +73,15 @@ async def handle_webhook_event(event: stripe.Event, db: AsyncSession) -> str:
     logger.info("Processing Stripe event: %s (id=%s)", event_type, event["id"])
     result = await handler(data, db)
     await db.commit()
+
+    # Sync user plan entitlements after subscription change
+    stripe_sub_id = data.get("subscription") or (data.get("id") if "subscription" in event_type else None)
+    if stripe_sub_id:
+        sub = await _get_subscription_by_stripe_id(db, stripe_sub_id)
+        if sub:
+            from app.modules.billing.entitlements import EntitlementService
+            await EntitlementService.sync_user_plan_entitlements(sub.user_id, db)
+
     return result
 
 

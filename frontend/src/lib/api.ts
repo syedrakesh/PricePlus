@@ -302,17 +302,22 @@ export interface Entitlements {
   plan_id: string;
   max_stores: number;
   current_stores: number;
+  paused_stores?: number;
   max_tracked_products: number;
   current_tracked_products: number;
+  paused_tracked_products?: number;
   poll_interval_mins: number;
   subscription_status: string;
+  is_over_limit?: boolean;
 }
 
 export interface UserUsageSummary {
   plan_id: string; plan_name: string; plan_slug: string; price_usd: number;
-  max_stores: number; current_stores: number; max_tracked_products: number;
-  current_tracked_products: number; min_poll_interval_mins: number;
+  max_stores: number; current_stores: number; paused_stores?: number;
+  max_tracked_products: number; current_tracked_products: number;
+  paused_tracked_products?: number; min_poll_interval_mins: number;
   max_priority_products: number; current_priority_products: number;
+  is_over_limit?: boolean;
   features: Record<string, any>;
 }
 

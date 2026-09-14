@@ -75,10 +75,13 @@ class EntitlementResponse(BaseModel):
     plan_id: str
     max_stores: int
     current_stores: int
+    paused_stores: int = 0
     max_tracked_products: int
     current_tracked_products: int
+    paused_tracked_products: int = 0
     poll_interval_mins: int
     subscription_status: str
+    is_over_limit: bool = False
 
 
 class CreateCheckoutSessionRequest(BaseModel):
@@ -175,11 +178,14 @@ class UserUsageSummaryResponse(BaseModel):
     price_usd: float
     max_stores: int
     current_stores: int
+    paused_stores: int = 0
     max_tracked_products: int
     current_tracked_products: int
+    paused_tracked_products: int = 0
     min_poll_interval_mins: int
     max_priority_products: int
     current_priority_products: int
+    is_over_limit: bool = False
     features: dict[str, Any]
 
 

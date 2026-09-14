@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,11 +38,14 @@ class UserUsageSummary:
     price_usd: float
     max_stores: int
     current_stores: int
+    paused_stores: int
     max_tracked_products: int
     current_tracked_products: int
+    paused_tracked_products: int
     min_poll_interval_mins: int
     max_priority_products: int
     current_priority_products: int
+    is_over_limit: bool
     features: dict
 
 
@@ -113,15 +116,98 @@ class EntitlementService:
         return plan
 
     @classmethod
+    async def sync_user_plan_entitlements(
+        cls, user_id: uuid.UUID, db: AsyncSession
+    ) -> None:
+        """
+        Synchronize user's stores and tracked products status with their current subscription plan limits.
+
+        If total stores > max_stores:
+          - Stores 1..max_stores (ordered by created_at) stay/become 'active'.
+          - Stores beyond max_stores get status='paused_over_limit'.
+        If total tracked products > max_tracked_products:
+          - Tracked products 1..max_tracked_products (ordered by created_at) stay/become is_active=True, status='active'.
+          - Tracked products beyond max_tracked_products get is_active=False, status='paused_over_limit'.
+
+        If user upgraded:
+          - Stores/products that were 'paused_over_limit' within the new limit are automatically un-paused.
+        """
+        if await _is_superuser_or_admin(user_id, db):
+            await db.execute(
+                update(CompetitorStore)
+                .where(CompetitorStore.user_id == user_id, CompetitorStore.status == "paused_over_limit")
+                .values(status="active")
+            )
+            await db.execute(
+                update(TrackedProduct)
+                .where(TrackedProduct.user_id == user_id, TrackedProduct.status == "paused_over_limit")
+                .values(is_active=True, status="active")
+            )
+            await db.commit()
+            return
+
+        plan = await cls.get_user_active_plan(user_id, db)
+        max_stores = plan.max_stores
+        max_products = plan.max_tracked_products
+
+        # Synchronize stores
+        stores_res = await db.execute(
+            select(CompetitorStore)
+            .where(CompetitorStore.user_id == user_id)
+            .order_by(CompetitorStore.created_at.asc())
+        )
+        stores = list(stores_res.scalars().all())
+
+        for idx, store in enumerate(stores):
+            if idx < max_stores:
+                if store.status == "paused_over_limit":
+                    store.status = "active"
+            else:
+                if store.status in ("active", "error"):
+                    store.status = "paused_over_limit"
+
+        # Synchronize tracked products
+        prods_res = await db.execute(
+            select(TrackedProduct)
+            .where(TrackedProduct.user_id == user_id)
+            .order_by(TrackedProduct.created_at.asc())
+        )
+        products = list(prods_res.scalars().all())
+
+        for idx, prod in enumerate(products):
+            if idx < max_products:
+                if getattr(prod, "status", "active") == "paused_over_limit":
+                    prod.is_active = True
+                    prod.status = "active"
+            else:
+                if prod.is_active or getattr(prod, "status", "active") == "active":
+                    prod.is_active = False
+                    prod.status = "paused_over_limit"
+
+        await db.commit()
+
+    @classmethod
     async def get_user_usage_summary(
         cls, user_id: uuid.UUID, db: AsyncSession
     ) -> UserUsageSummary:
         """Calculate active usage counts against subscription plan limits."""
-        # Count stores
+        # Ensure entitlements status are in sync
+        await cls.sync_user_plan_entitlements(user_id, db)
+
+        # Count total stores
         store_count_res = await db.execute(
             select(func.count()).where(CompetitorStore.user_id == user_id)
         )
         current_stores = store_count_res.scalar_one()
+
+        # Count paused stores
+        paused_stores_res = await db.execute(
+            select(func.count()).where(
+                CompetitorStore.user_id == user_id,
+                CompetitorStore.status == "paused_over_limit",
+            )
+        )
+        paused_stores = paused_stores_res.scalar_one()
 
         # Count active tracked products
         prod_count_res = await db.execute(
@@ -131,6 +217,15 @@ class EntitlementService:
             )
         )
         current_tracked = prod_count_res.scalar_one()
+
+        # Count paused tracked products
+        paused_prod_res = await db.execute(
+            select(func.count()).where(
+                TrackedProduct.user_id == user_id,
+                TrackedProduct.status == "paused_over_limit",
+            )
+        )
+        paused_tracked = paused_prod_res.scalar_one()
 
         # Count active priority products
         priority_count_res = await db.execute(
@@ -151,11 +246,14 @@ class EntitlementService:
                 price_usd=0.0,
                 max_stores=999999,
                 current_stores=current_stores,
+                paused_stores=0,
                 max_tracked_products=999999,
                 current_tracked_products=current_tracked,
+                paused_tracked_products=0,
                 min_poll_interval_mins=1,
                 max_priority_products=999999,
                 current_priority_products=current_priority,
+                is_over_limit=False,
                 features={"all_features": True, "unlimited_access": True, "admin_access": True},
             )
 
@@ -166,6 +264,13 @@ class EntitlementService:
         except (ValueError, TypeError):
             price_usd_val = 0.0
 
+        is_over_limit = (
+            current_stores > plan.max_stores
+            or current_tracked > plan.max_tracked_products
+            or paused_stores > 0
+            or paused_tracked > 0
+        )
+
         return UserUsageSummary(
             plan_id=str(plan.id),
             plan_name=plan.name,
@@ -173,11 +278,14 @@ class EntitlementService:
             price_usd=price_usd_val,
             max_stores=plan.max_stores,
             current_stores=current_stores,
+            paused_stores=paused_stores,
             max_tracked_products=plan.max_tracked_products,
             current_tracked_products=current_tracked,
+            paused_tracked_products=paused_tracked,
             min_poll_interval_mins=plan.poll_interval_mins,
             max_priority_products=plan.max_priority_products,
             current_priority_products=current_priority,
+            is_over_limit=is_over_limit,
             features=plan.features or {},
         )
 
