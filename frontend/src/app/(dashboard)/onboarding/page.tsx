@@ -1,88 +1,87 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { storesApi, productsApi, trackingApi, authApi, DiscoveredProduct } from '@/lib/api';
+import useSWR from 'swr';
+import { storesApi, authApi } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { PageLoader } from '@/components/ui/Spinner';
 import styles from './page.module.css';
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const { data: user, isLoading: userLoading } = useSWR('auth-me', () => authApi.me());
+  const [step, setStep] = useState<1 | 2>(1);
 
-  // Form state
+  // Form state kept in local memory until Finish button click
   const [storeName, setStoreName] = useState('');
   const [storeUrl, setStoreUrl] = useState('');
-  const [storeId, setStoreId] = useState<string | null>(null);
-  const [discoveredProducts, setDiscoveredProducts] = useState<DiscoveredProduct[]>([]);
-  const [trackedProductIds, setTrackedProductIds] = useState<Set<string>>(new Set());
-  const [alertThreshold, setAlertThreshold] = useState('5');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Step 1: Add Store
-  async function handleAddStore(e: React.FormEvent) {
+  // Auto-redirect if onboarding is already completed
+  useEffect(() => {
+    if (user?.onboarding_completed) {
+      router.replace('/');
+    }
+  }, [user, router]);
+
+  if (userLoading || user?.onboarding_completed) {
+    return <PageLoader />;
+  }
+
+  // Step 1: Validate input & move to confirmation (No DB call!)
+  function handleStep1Submit(e: React.FormEvent) {
     e.preventDefault();
     if (!storeUrl.trim()) return;
 
     setError('');
-    setLoading(true);
+    let formattedUrl = storeUrl.trim();
+    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+      formattedUrl = `https://${formattedUrl}`;
+    }
+
     try {
-      let formattedUrl = storeUrl.trim();
-      if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-        formattedUrl = `https://${formattedUrl}`;
+      new URL(formattedUrl);
+    } catch {
+      setError('Please enter a valid store URL');
+      return;
+    }
+
+    setStoreUrl(formattedUrl);
+    setStep(2);
+  }
+
+  // Finish Onboarding: Create store, trigger discovery, and complete onboarding in DB
+  async function handleFinishOnboarding() {
+    if (!storeUrl) {
+      setStep(1);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const displayName = storeName.trim() || new URL(storeUrl).hostname;
+      
+      // 1. Create store in DB
+      const store = await storesApi.create(storeUrl, displayName);
+
+      // 2. Trigger discovery scan in DB
+      try {
+        await storesApi.triggerDiscovery(store.id);
+      } catch (discErr) {
+        console.warn('Initial discovery trigger note:', discErr);
       }
 
-      const displayName = storeName.trim() || new URL(formattedUrl).hostname;
-      const store = await storesApi.create(formattedUrl, displayName);
-
-      setStoreId(store.id);
-
-      // Trigger initial discovery scan
-      await storesApi.triggerDiscovery(store.id);
-      setStep(2);
-      fetchDiscoveredProducts(store.id);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to add store. Please check the URL.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Step 2: Fetch discovered products
-  async function fetchDiscoveredProducts(sid: string) {
-    setLoading(true);
-    try {
-      const res = await productsApi.list(sid, 1, 10);
-      setDiscoveredProducts(res.products);
-    } catch (err) {
-      console.error('Discovery fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Step 3: Track a product
-  async function handleToggleTrack(product: DiscoveredProduct) {
-    if (trackedProductIds.has(product.id)) return;
-
-    try {
-      await trackingApi.track(product.id);
-      setTrackedProductIds(prev => new Set(prev).add(product.id));
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not track product');
-    }
-  }
-
-  // Step 4: Finish Onboarding
-  async function handleFinishOnboarding() {
-    setLoading(true);
-    try {
+      // 3. Mark onboarding completed in DB
       await authApi.completeOnboarding();
       router.push('/');
-    } catch {
-      router.push('/');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -98,13 +97,13 @@ export default function OnboardingPage() {
       {/* Progress Bar */}
       <div className={styles.progressContainer}>
         <div className={styles.stepsLabel}>
-          <span>Step {step} of 4</span>
-          <span>{step === 1 ? 'Add Store' : step === 2 ? 'Discover Products' : step === 3 ? 'Track Products' : 'Configure Alerts'}</span>
+          <span>Step {step} of 2</span>
+          <span>{step === 1 ? 'Add Store' : 'Confirm & Launch'}</span>
         </div>
         <div className={styles.progressBarBg}>
           <div
             className={styles.progressBarFill}
-            style={{ width: `${(step / 4) * 100}%` }}
+            style={{ width: `${(step / 2) * 100}%` }}
           />
         </div>
       </div>
@@ -113,9 +112,9 @@ export default function OnboardingPage() {
       <div className={styles.card}>
         {error && <div className={styles.errorBox}>⚠️ {error}</div>}
 
-        {/* STEP 1: Add Store */}
+        {/* STEP 1: Enter Store URL & Name */}
         {step === 1 && (
-          <form onSubmit={handleAddStore} className={styles.formStep}>
+          <form onSubmit={handleStep1Submit} className={styles.formStep}>
             <div className={styles.stepTitle}>1. Add Your First Competitor Store</div>
             <p className={styles.stepDesc}>Enter any Shopify or e-commerce store URL to scan catalog prices.</p>
 
@@ -137,108 +136,41 @@ export default function OnboardingPage() {
               placeholder="Competitor Fashion"
             />
 
-            <Button type="submit" loading={loading} size="lg" style={{ width: '100%', marginTop: '12px' }}>
-              Add Store & Discover Catalog →
+            <Button type="submit" size="lg" style={{ width: '100%', marginTop: '12px' }}>
+              Continue to Confirmation →
             </Button>
           </form>
         )}
 
-        {/* STEP 2: Catalog Scanning / Results */}
+        {/* STEP 2: Confirm & Launch Dashboard */}
         {step === 2 && (
           <div className={styles.formStep}>
-            <div className={styles.stepTitle}>2. Product Discovery Scan</div>
-            <p className={styles.stepDesc}>We are automatically scanning the store catalog for products.</p>
+            <div className={styles.stepTitle}>2. Confirm Store Setup</div>
+            <p className={styles.stepDesc}>Review your competitor store details before launching your dashboard.</p>
 
-            {loading ? (
-              <div className={styles.loadingState}>
-                <div className={styles.spinner} />
-                <p>Scanning store sitemaps for products...</p>
+            <div style={{
+              background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-lg)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px'
+            }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text)' }}>
+                🏪 Store: {storeName.trim() || new URL(storeUrl).hostname}
               </div>
-            ) : discoveredProducts.length > 0 ? (
-              <div className={styles.productList}>
-                {discoveredProducts.slice(0, 4).map(p => (
-                  <div key={p.id} className={styles.productRow}>
-                    <div className={styles.productThumb}>📦</div>
-                    <div className={styles.productMeta}>
-                      <div className={styles.productName}>{p.title}</div>
-                      <div className={styles.productPrice}>{p.current_price ? `$${p.current_price.toFixed(2)}` : 'Price pending'}</div>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ fontSize: '13px', color: 'var(--color-text-2)', fontFamily: 'monospace' }}>
+                🔗 {storeUrl}
               </div>
-            ) : (
-              <div className={styles.emptyScan}>
-                Discovery in progress. Click continue to proceed to product tracking.
+              <div style={{ fontSize: '12px', color: 'var(--color-accent)', marginTop: '4px' }}>
+                ⚡ Catalog discovery scan will automatically run upon launching your dashboard.
               </div>
-            )}
-
-            <Button onClick={() => setStep(3)} size="lg" style={{ width: '100%', marginTop: '16px' }}>
-              Proceed to Track Products →
-            </Button>
-          </div>
-        )}
-
-        {/* STEP 3: Track Products */}
-        {step === 3 && (
-          <div className={styles.formStep}>
-            <div className={styles.stepTitle}>3. Select Products to Track</div>
-            <p className={styles.stepDesc}>Track items to receive automated price monitoring alerts when prices change.</p>
-
-            {discoveredProducts.length > 0 ? (
-              <div className={styles.productList}>
-                {discoveredProducts.slice(0, 5).map(p => {
-                  const isTracked = trackedProductIds.has(p.id) || p.is_tracked;
-                  return (
-                    <div key={p.id} className={styles.productRow}>
-                      <div className={styles.productThumb}>📦</div>
-                      <div className={styles.productMeta}>
-                        <div className={styles.productName}>{p.title}</div>
-                        <div className={styles.productPrice}>{p.current_price ? `$${p.current_price.toFixed(2)}` : 'N/A'}</div>
-                      </div>
-                      <Button
-                        variant={isTracked ? 'secondary' : 'primary'}
-                        size="sm"
-                        onClick={() => handleToggleTrack(p)}
-                        disabled={isTracked}
-                      >
-                        {isTracked ? '✓ Tracking' : '+ Track'}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className={styles.stepDesc}>No products discovered yet. You can add product URLs directly from your store page anytime.</p>
-            )}
-
-            <Button onClick={() => setStep(4)} size="lg" style={{ width: '100%', marginTop: '16px' }}>
-              Continue to Alert Settings →
-            </Button>
-          </div>
-        )}
-
-        {/* STEP 4: Configure Email Alerts */}
-        {step === 4 && (
-          <div className={styles.formStep}>
-            <div className={styles.stepTitle}>4. Price Drop Alert Preferences</div>
-            <p className={styles.stepDesc}>Configure notifications when competitor prices change.</p>
-
-            <Input
-              label="Minimum Price Drop Threshold (%)"
-              type="number"
-              value={alertThreshold}
-              onChange={e => setAlertThreshold(e.target.value)}
-              placeholder="5"
-              hint="Trigger email notification if price drops by 5% or more"
-            />
-
-            <div className={styles.alertPreview}>
-              📧 Automated email alerts will be sent to your account email when price drops occur.
             </div>
 
-            <Button onClick={handleFinishOnboarding} loading={loading} size="lg" style={{ width: '100%', marginTop: '16px' }}>
-              Finish Setup & Launch Dashboard 🚀
-            </Button>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+              <Button type="button" variant="secondary" onClick={() => setStep(1)} disabled={loading}>
+                ← Back
+              </Button>
+              <Button onClick={handleFinishOnboarding} loading={loading} size="lg" style={{ flex: 1 }}>
+                Finish Setup & Launch Dashboard 🚀
+              </Button>
+            </div>
           </div>
         )}
       </div>
