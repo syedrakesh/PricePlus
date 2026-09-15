@@ -107,6 +107,7 @@ async def _get_or_create_free_subscription(user_id: uuid.UUID, db: AsyncSession)
         )
         db.add(sub)
     await db.commit()
+    await EntitlementService.sync_user_plan_entitlements(user_id, db)
     return sub
 
 

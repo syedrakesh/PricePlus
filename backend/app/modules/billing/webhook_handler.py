@@ -208,11 +208,15 @@ async def _handle_subscription_deleted(data: dict, db: AsyncSession) -> str:
     if not stripe_sub_id:
         return "error:missing_subscription_id"
 
-    await db.execute(
-        update(Subscription)
-        .where(Subscription.stripe_subscription_id == stripe_sub_id)
-        .values(status="canceled")
+    sub_res = await db.execute(
+        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
     )
+    sub = sub_res.scalar_one_or_none()
+    if sub:
+        sub.status = "canceled"
+        await db.commit()
+        from app.modules.billing.entitlements import EntitlementService
+        await EntitlementService.sync_user_plan_entitlements(sub.user_id, db)
 
     logger.info("Subscription canceled: sub=%s", stripe_sub_id)
     return f"ok:subscription_canceled:{stripe_sub_id}"
