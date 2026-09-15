@@ -15,7 +15,7 @@ function OnboardingWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
-  const { refreshUser } = useAuth();
+  const { refreshUser, isAdmin } = useAuth();
 
   const [verifyingSession, setVerifyingSession] = useState(!!sessionId && !isLoggedIn());
   const [sessionSuccessMsg, setSessionSuccessMsg] = useState('');
@@ -54,14 +54,16 @@ function OnboardingWizard() {
     }
   }, [sessionId, mutateUser, refreshUser]);
 
-  // Auto-redirect if onboarding is already completed
+  // Auto-redirect if onboarding is already completed OR if user is an Admin
+  const isAdminUser = user && (isAdmin || user.is_superuser || user.role_slug === 'admin');
+
   useEffect(() => {
-    if (user?.onboarding_completed) {
+    if (user?.onboarding_completed || isAdminUser) {
       router.replace('/');
     }
-  }, [user, router]);
+  }, [user, isAdminUser, router]);
 
-  if (verifyingSession || userLoading || (user?.onboarding_completed && !sessionSuccessMsg)) {
+  if (verifyingSession || userLoading || isAdminUser || (user?.onboarding_completed && !sessionSuccessMsg)) {
     return <PageLoader />;
   }
 

@@ -15,8 +15,11 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
 
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const [mounted, setMounted] = useState(false);
+
+  const isAdminUser = user && (isAdmin || user.is_superuser || user.role_slug === 'admin');
+  const isCustomer = user && !isAdminUser;
 
   useEffect(() => {
     setMounted(true);
@@ -24,16 +27,24 @@ function DashboardShellContent({ children }: { children: React.ReactNode }) {
       router.replace('/login');
       return;
     }
-    if (!loading && user && !user.onboarding_completed && pathname !== '/onboarding') {
-      router.replace('/onboarding');
+    if (!loading && user) {
+      if (isAdminUser && pathname === '/onboarding') {
+        router.replace('/');
+      } else if (isCustomer && !user.onboarding_completed && pathname !== '/onboarding') {
+        router.replace('/onboarding');
+      }
     }
-  }, [router, user, loading, pathname, sessionId]);
+  }, [router, user, loading, pathname, sessionId, isCustomer, isAdminUser]);
 
   if (!mounted || loading) {
     return <PageLoader />;
   }
 
-  if (user && !user.onboarding_completed && pathname !== '/onboarding') {
+  if (isAdminUser && pathname === '/onboarding') {
+    return <PageLoader />;
+  }
+
+  if (isCustomer && !user.onboarding_completed && pathname !== '/onboarding') {
     return <PageLoader />;
   }
 
