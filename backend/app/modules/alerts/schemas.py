@@ -18,7 +18,7 @@ VALID_CHANNELS = {"email", "webhook"}
 
 
 class CreateAlertRuleRequest(BaseModel):
-    tracked_product_id: str
+    tracked_product_id: str | None = Field(default=None, description="Optional. If omitted, rule applies to ALL tracked products.")
     condition_type: str = Field(description=", ".join(sorted(VALID_CONDITION_TYPES)))
     threshold_pct: float | None = Field(
         default=None,
@@ -63,7 +63,7 @@ class CreateAlertRuleRequest(BaseModel):
 class AlertRuleResponse(BaseModel):
     id: str
     user_id: str
-    tracked_product_id: str
+    tracked_product_id: str | None
     condition_type: str
     threshold_pct: float | None
     threshold_price: float | None
@@ -81,7 +81,7 @@ class AlertRuleResponse(BaseModel):
         return cls(
             id=str(rule.id),
             user_id=str(rule.user_id),
-            tracked_product_id=str(rule.tracked_product_id),
+            tracked_product_id=str(rule.tracked_product_id) if rule.tracked_product_id else None,
             condition_type=rule.condition_type,
             threshold_pct=float(rule.threshold_pct) if rule.threshold_pct is not None else None,
             threshold_price=float(rule.threshold_price) if rule.threshold_price is not None else None,
@@ -90,7 +90,7 @@ class AlertRuleResponse(BaseModel):
             is_enabled=rule.is_enabled,
             cool_down_minutes=rule.cool_down_minutes,
             last_triggered_at=rule.last_triggered_at.isoformat() if rule.last_triggered_at else None,
-            created_at=rule.created_at.isoformat(),
+            created_at=rule.created_at.isoformat() if rule.created_at else "",
         )
 
 

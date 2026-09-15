@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.alerts.evaluator import AlertConditionInput, build_trigger_summary, should_fire
@@ -81,11 +81,15 @@ async def _process_one_change(
     discovered: DiscoveredProduct,
 ) -> int:
     """Evaluate and fire all matching alert rules for one price change."""
-    # Load all enabled alert rules for this tracked product
+    # Load all enabled alert rules for this user (both item-specific and universal account-wide rules)
     rules_result = await db.execute(
         select(AlertRule).where(
-            AlertRule.tracked_product_id == tracked.id,
+            AlertRule.user_id == tracked.user_id,
             AlertRule.is_enabled == True,  # noqa: E712
+            or_(
+                AlertRule.tracked_product_id == tracked.id,
+                AlertRule.tracked_product_id.is_(None),
+            ),
         )
     )
     rules = list(rules_result.scalars().all())

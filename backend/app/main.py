@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await db.execute(text("ALTER TABLE discovery_runs ADD COLUMN IF NOT EXISTS raw_error TEXT;"))
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE NOT NULL;"))
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE NOT NULL;"))
+            await db.execute(text("ALTER TABLE alert_rules ALTER COLUMN tracked_product_id DROP NOT NULL;"))
             await db.commit()
     except Exception as exc:
         logger.warning("Failed to auto-migrate database columns: %s", exc)

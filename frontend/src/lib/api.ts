@@ -242,7 +242,7 @@ export interface PriceChange {
 // ─── Alerts ───────────────────────────────────────────────────────────────────
 
 export interface AlertRule {
-  id: string; tracked_product_id: string; condition_type: string;
+  id: string; tracked_product_id: string | null; condition_type: string;
   threshold_pct: number | null; threshold_price: number | null;
   channel: string; is_enabled: boolean; cool_down_minutes: number;
   last_triggered_at: string | null; created_at: string;
@@ -256,7 +256,7 @@ export interface Alert {
 
 export const alertsApi = {
   listRules: () => request<{ rules: AlertRule[]; total: number }>('/alert-rules'),
-  createRule: (data: Partial<AlertRule> & { tracked_product_id: string; condition_type: string }) =>
+  createRule: (data: Partial<AlertRule> & { tracked_product_id?: string | null; condition_type: string }) =>
     request<AlertRule>('/alert-rules', { method: 'POST', body: JSON.stringify(data) }),
   deleteRule: (id: string) => request<void>(`/alert-rules/${id}`, { method: 'DELETE' }),
   toggleRule: (id: string) => request<AlertRule>(`/alert-rules/${id}/toggle`, { method: 'PATCH' }),

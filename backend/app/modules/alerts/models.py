@@ -45,10 +45,10 @@ class AlertRule(Base):
         nullable=False,
         index=True,
     )
-    tracked_product_id: Mapped[uuid.UUID] = mapped_column(
+    tracked_product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 

@@ -12,9 +12,14 @@ from app.modules.auth.service import register_user
 async def test_register_user_free_plan():
     mock_db = AsyncMock()
 
-    # Mock DB query for existing user (None) and plan
+    # Mock DB query for existing user (None), user role, and plan
     mock_user_res = MagicMock()
     mock_user_res.scalar_one_or_none.return_value = None
+
+    mock_role = MagicMock()
+    mock_role.id = "role-user-123"
+    mock_role_res = MagicMock()
+    mock_role_res.scalars().first.return_value = mock_role
 
     mock_plan = MagicMock()
     mock_plan.id = "plan-free-123"
@@ -25,7 +30,7 @@ async def test_register_user_free_plan():
     mock_plan_res = MagicMock()
     mock_plan_res.scalars().first.return_value = mock_plan
 
-    mock_db.execute.side_effect = [mock_user_res, mock_plan_res]
+    mock_db.execute.side_effect = [mock_user_res, mock_role_res, mock_plan_res]
 
     req = RegisterRequest(
         email="newuser_free@example.com",

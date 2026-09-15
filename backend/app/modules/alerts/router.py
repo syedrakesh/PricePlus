@@ -72,12 +72,48 @@ async def create_alert_rule(
     """
     user_id = uuid.UUID(user_id_str)
 
-    try:
-        tracked_uuid = uuid.UUID(data.tracked_product_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Tracked product not found") from None
+    tracked_uuid: uuid.UUID | None = None
+    if data.tracked_product_id:
+        try:
+            tracked_uuid = uuid.UUID(data.tracked_product_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Tracked product not found") from None
 
-    await _get_owned_tracked(tracked_uuid, user_id, db)
+        await _get_owned_tracked(tracked_uuid, user_id, db)
+
+    # Check for existing duplicate rule for this scope and condition
+    dup_query = select(AlertRule).where(
+        AlertRule.user_id == user_id,
+        AlertRule.condition_type == data.condition_type,
+    )
+    if tracked_uuid is None:
+        dup_query = dup_query.where(AlertRule.tracked_product_id.is_(None))
+    else:
+        dup_query = dup_query.where(AlertRule.tracked_product_id == tracked_uuid)
+
+    if data.threshold_pct is not None:
+        dup_query = dup_query.where(AlertRule.threshold_pct == data.threshold_pct)
+    else:
+        dup_query = dup_query.where(AlertRule.threshold_pct.is_(None))
+
+    if data.threshold_price is not None:
+        dup_query = dup_query.where(AlertRule.threshold_price == data.threshold_price)
+    else:
+        dup_query = dup_query.where(AlertRule.threshold_price.is_(None))
+
+    dup_result = await db.execute(dup_query)
+    existing_rule = dup_result.scalars().first()
+
+    if existing_rule:
+        if not existing_rule.is_enabled:
+            existing_rule.is_enabled = True
+            await db.commit()
+            await db.refresh(existing_rule)
+            return AlertRuleResponse.from_orm_model(existing_rule)
+        raise HTTPException(
+            status_code=400,
+            detail="An identical alert rule already exists for this scope.",
+        )
 
     rule = AlertRule(
         id=uuid.uuid4(),
