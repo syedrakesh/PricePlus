@@ -41,6 +41,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.modules.billing.seed_plans import seed_plans
     await seed_plans()
 
+    # Ensure schema migrations for tracked_products status column
+    from app.core.db import AsyncSessionLocal
+    from sqlalchemy import text
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("ALTER TABLE tracked_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active' NOT NULL;"))
+            await db.commit()
+    except Exception as exc:
+        logger.warning("Failed to auto-migrate tracked_products status column: %s", exc)
+
     # Seed RBAC permissions and default roles on startup
     from app.core.db import AsyncSessionLocal
     from app.modules.auth.seed_rbac import seed_rbac_data

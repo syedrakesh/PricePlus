@@ -274,21 +274,25 @@ async def list_discovered_products(
 
         await db.commit()
 
-    # Fetch set of active tracked discovered_product_ids for this user & store
+    # Fetch dictionary of tracked discovered_product_ids -> status for this user & store
     from app.modules.tracking.models import TrackedProduct
 
     tracked_result = await db.execute(
-        select(TrackedProduct.discovered_product_id).where(
+        select(TrackedProduct.discovered_product_id, TrackedProduct.status).where(
             TrackedProduct.user_id == user_id,
             TrackedProduct.store_id == store.id,
-            TrackedProduct.is_active == True,
+            (TrackedProduct.is_active == True) | (TrackedProduct.status == "paused_over_limit"),  # noqa: E712
         )
     )
-    tracked_ids = set(tracked_result.scalars().all())
+    tracked_map = {row[0]: row[1] for row in tracked_result.all()}
 
     return DiscoveredProductListResponse(
         products=[
-            DiscoveredProductResponse.from_orm_model(p, is_tracked=(p.id in tracked_ids))
+            DiscoveredProductResponse.from_orm_model(
+                p,
+                is_tracked=(p.id in tracked_map),
+                tracking_status=tracked_map.get(p.id),
+            )
             for p in products
         ],
         total=total,

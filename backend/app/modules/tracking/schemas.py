@@ -42,6 +42,7 @@ class TrackedProductResponse(BaseModel):
     discovered_product_id: str
     store_id: str
     is_active: bool
+    status: str = "active"
     tracking_interval_minutes: int | None = None
     is_priority: bool = False
     next_check_at: str | None = None
@@ -87,6 +88,7 @@ class TrackedProductResponse(BaseModel):
             discovered_product_id=str(tracked.discovered_product_id),
             store_id=str(tracked.store_id),
             is_active=tracked.is_active,
+            status=getattr(tracked, "status", "active"),
             tracking_interval_minutes=tracked.tracking_interval_minutes,
             is_priority=tracked.is_priority,
             next_check_at=tracked.next_check_at.isoformat() if tracked.next_check_at else None,

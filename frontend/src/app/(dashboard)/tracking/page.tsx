@@ -6,6 +6,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState, PageLoader } from '@/components/ui/Spinner';
 import Link from 'next/link';
+import { StatusBadge } from '@/components/ui/Badge';
 import { TrackingStatusBanner } from '@/components/ui/TrackingStatusBanner';
 import styles from './page.module.css';
 
@@ -27,7 +28,7 @@ export default function TrackingPage() {
       <div className={styles.header}>
         <div>
           <h1>Tracked Products</h1>
-          <p>{data ? `${data.total} products being monitored` : 'Loading…'}</p>
+          <p>{data ? `${data.total} products monitored (${data.active_count} active)` : 'Loading…'}</p>
         </div>
       </div>
 
@@ -72,6 +73,7 @@ export default function TrackingPage() {
                       )}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <StatusBadge status={item.status ?? (item.is_active ? 'active' : 'paused_over_limit')} />
                       <Link href={`/tracking/${item.id}`}>
                         <Button size="sm" variant="secondary">History</Button>
                       </Link>

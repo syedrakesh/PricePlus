@@ -166,6 +166,8 @@ class EntitlementService:
                 if store.status in ("active", "error"):
                     store.status = "paused_over_limit"
 
+        paused_store_ids = {s.id for s in stores if s.status in ("paused_over_limit", "paused")}
+
         # Synchronize tracked products
         prods_res = await db.execute(
             select(TrackedProduct)
@@ -174,13 +176,18 @@ class EntitlementService:
         )
         products = list(prods_res.scalars().all())
 
-        for idx, prod in enumerate(products):
-            if idx < max_products:
-                if getattr(prod, "status", "active") == "paused_over_limit":
+        active_prod_count = 0
+        for prod in products:
+            # If product belongs to a paused or over-limit store, it is automatically paused
+            if prod.store_id in paused_store_ids:
+                prod.is_active = False
+                prod.status = "paused_over_limit"
+            else:
+                if active_prod_count < max_products:
                     prod.is_active = True
                     prod.status = "active"
-            else:
-                if prod.is_active or getattr(prod, "status", "active") == "active":
+                    active_prod_count += 1
+                else:
                     prod.is_active = False
                     prod.status = "paused_over_limit"
 

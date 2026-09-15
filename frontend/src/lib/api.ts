@@ -105,6 +105,7 @@ export interface Store {
 
 export const storesApi = {
   list: () => request<{ stores: Store[]; total: number }>('/stores'),
+  get: (id: string) => request<Store>(`/stores/${id}`),
   create: (url: string, display_name?: string) =>
     request<Store>('/stores', { method: 'POST', body: JSON.stringify({ url, display_name }) }),
   delete: (id: string) => request<void>(`/stores/${id}`, { method: 'DELETE' }),
@@ -121,6 +122,7 @@ export interface DiscoveredProduct {
   title: string | null; current_price: number | null; compare_at_price: number | null;
   currency: string; is_on_sale: boolean;
   is_discontinued: boolean; image_url: string | null; is_tracked: boolean;
+  tracking_status?: string | null;
 }
 
 export interface ProductFilters {
@@ -150,7 +152,7 @@ export const productsApi = {
 
 export interface TrackedProduct {
   id: string; user_id: string; discovered_product_id: string;
-  store_id: string; is_active: boolean; created_at: string;
+  store_id: string; is_active: boolean; status?: string; created_at: string;
   tracking_interval_minutes?: number | null;
   is_priority?: boolean;
   next_check_at?: string | null;

@@ -74,11 +74,17 @@ class DiscoveredProductResponse(BaseModel):
     is_discontinued: bool
     image_url: str | None
     is_tracked: bool = False
+    tracking_status: str | None = None
     discovered_at: str
     last_seen_at: str
 
     @classmethod
-    def from_orm_model(cls, product: object, is_tracked: bool = False) -> "DiscoveredProductResponse":
+    def from_orm_model(
+        cls,
+        product: object,
+        is_tracked: bool = False,
+        tracking_status: str | None = None,
+    ) -> "DiscoveredProductResponse":
         from app.modules.discovery.models import DiscoveredProduct
         assert isinstance(product, DiscoveredProduct)
         return cls(
@@ -94,6 +100,7 @@ class DiscoveredProductResponse(BaseModel):
             is_discontinued=getattr(product, 'is_discontinued', False),
             image_url=product.image_url,
             is_tracked=is_tracked,
+            tracking_status=tracking_status,
             discovered_at=product.discovered_at.isoformat(),
             last_seen_at=product.last_seen_at.isoformat(),
         )

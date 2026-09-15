@@ -62,7 +62,7 @@ async def _assert_store_ownership(
     store_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> CompetitorStore:
-    """Return the store if it belongs to user_id, raise TrackingError 404 otherwise."""
+    """Return the store if it belongs to user_id, raise TrackingError 404 or EntitlementError 403 otherwise."""
     result = await db.execute(
         select(CompetitorStore).where(
             CompetitorStore.id == store_id,
@@ -72,6 +72,11 @@ async def _assert_store_ownership(
     store = result.scalar_one_or_none()
     if store is None:
         raise TrackingError("Store not found", status_code=404)
+    if store.status in ("paused", "paused_over_limit"):
+        raise EntitlementError(
+            f"Cannot track products from store '{store.display_name or store.url}' because it is paused due to plan limits. Please upgrade your plan or manage active stores.",
+            status_code=403,
+        )
     return store
 
 
@@ -435,7 +440,9 @@ async def list_tracked_products(
         stmt = stmt.where(TrackedProduct.store_id == store_id)
 
     if active_only:
-        stmt = stmt.where(TrackedProduct.is_active == True)  # noqa: E712
+        stmt = stmt.where(
+            (TrackedProduct.is_active == True) | (TrackedProduct.status == "paused_over_limit")  # noqa: E712
+        )
 
     result = await db.execute(stmt)
     return list(result.all())

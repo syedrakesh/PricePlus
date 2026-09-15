@@ -55,7 +55,11 @@ async def run_monitoring_cycle(db: AsyncSession, force_all: bool = False) -> dic
     stmt = (
         select(TrackedProduct, DiscoveredProduct)
         .join(DiscoveredProduct, DiscoveredProduct.id == TrackedProduct.discovered_product_id)
-        .where(TrackedProduct.is_active.is_(True))
+        .join(CompetitorStore, CompetitorStore.id == TrackedProduct.store_id)
+        .where(
+            TrackedProduct.is_active.is_(True),
+            CompetitorStore.status == "active",
+        )
     )
     if not force_all:
         stmt = stmt.where(

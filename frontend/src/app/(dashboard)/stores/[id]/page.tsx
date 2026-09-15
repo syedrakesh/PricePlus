@@ -3,7 +3,7 @@
 import { useState, use } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { billingApi, productsApi, trackingApi } from '@/lib/api';
+import { billingApi, productsApi, storesApi, trackingApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -41,6 +41,8 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     max_price: maxPrice ? parseFloat(maxPrice) : undefined,
   };
 
+  const { data: storeData } = useSWR(`store-${id}`, () => storesApi.get(id));
+
   const { data, isLoading, mutate } = useSWR(
     `store-products-${id}-${page}-${searchQuery}-${minPrice}-${maxPrice}`,
     () => productsApi.list(id, page, pageSize, activeFilters)
@@ -53,12 +55,19 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
 
   const [tracking, setTracking] = useState<Record<string, boolean>>({});
 
+  const isStorePaused = storeData?.status === 'paused_over_limit' || storeData?.status === 'paused';
+
   const isProductLimitReached = !!(
     entitlements && entitlements.current_tracked_products >= entitlements.max_tracked_products
   );
 
   async function handleTrack(discoveredProductId: string) {
     setError('');
+
+    if (isStorePaused) {
+      setError(`Cannot track products from store '${storeData?.display_name || storeData?.url}' because it is currently paused due to plan limits. Please upgrade your plan or delete excess stores.`);
+      return;
+    }
 
     if (isProductLimitReached) {
       setError(`Tracked product limit reached (${entitlements?.current_tracked_products}/${entitlements?.max_tracked_products}) for ${entitlements?.plan_name} plan. Please upgrade your plan.`);
@@ -134,20 +143,20 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      {(isProductLimitReached || error) && (
+      {(isStorePaused || isProductLimitReached || error) && (
         <div style={{
           padding: '1rem',
           borderRadius: '8px',
-          background: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
+          background: isStorePaused ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.1)',
+          border: isStorePaused ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(239, 68, 68, 0.3)',
           marginBottom: '1rem',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '1rem'
         }}>
-          <span style={{ color: '#ef4444', fontSize: '0.9rem', fontWeight: 500 }}>
-            ⚠️ {error || `Tracked product limit reached (${entitlements?.current_tracked_products}/${entitlements?.max_tracked_products}) on your ${entitlements?.plan_name} plan.`}
+          <span style={{ color: isStorePaused ? '#fbbf24' : '#ef4444', fontSize: '0.9rem', fontWeight: 500 }}>
+            ⚠️ {error || (isStorePaused ? `This store is currently Paused (Store limit ${entitlements?.current_stores}/${entitlements?.max_stores} reached). Product tracking is disabled for paused stores.` : `Tracked product limit reached (${entitlements?.current_tracked_products}/${entitlements?.max_tracked_products}) on your ${entitlements?.plan_name} plan.`)}
           </span>
           <Link href="/billing">
             <Button size="sm" variant="primary">Upgrade Plan</Button>
@@ -206,44 +215,38 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
               </div>
 
               {hasActiveFilters && (
-                <Button size="sm" variant="secondary" onClick={resetFilters}>
-                  Clear Filters
-                </Button>
+                <Button size="sm" variant="ghost" onClick={resetFilters}>Reset</Button>
               )}
             </div>
           </div>
         </CardBody>
       </Card>
 
-
+      {/* Product List */}
       {isLoading ? (
         <PageLoader />
-      ) : !(data?.products ?? []).length ? (
+      ) : !data || data.products.length === 0 ? (
         <EmptyState
-          icon="📦"
-          title="No products found"
-          description="Trigger a discovery run to scan this store's product catalog."
+          title={hasActiveFilters ? "No matching products found" : "No discovered products yet"}
+          description={hasActiveFilters ? "Try broadening your search query or price range." : "Run a product discovery check to populate products for this store."}
         />
       ) : (
         <>
           <div className={styles.grid}>
-            {(data?.products ?? []).map(product => (
+            {data.products.map(product => (
               <Card key={product.id} className={styles.productCard}>
                 <CardBody>
-                  {product.image_url && (
-                    <img src={product.image_url} alt={product.title ?? ''} className={styles.productImg} />
-                  )}
-                  {!product.image_url && (
+                  {product.image_url ? (
+                    <img src={product.image_url} alt={product.title || product.handle} className={styles.productImg} />
+                  ) : (
                     <div className={styles.productImgPlaceholder}>📦</div>
                   )}
-                  <h3 className={styles.productTitle}>{product.title ?? product.handle}</h3>
+                  <h3 className={styles.productTitle}>{product.title || product.handle}</h3>
                   <div className={styles.productMeta}>
-                    {product.is_discontinued ? (
-                      <span className={styles.noPrice}>Discontinued</span>
-                    ) : product.current_price !== null ? (
+                    {product.current_price !== null ? (
                       <div className={styles.priceBlock}>
                         <span className={styles.price}>${product.current_price.toFixed(2)}</span>
-                        {product.is_on_sale && product.compare_at_price !== null && (
+                        {product.compare_at_price && (
                           <span className={styles.comparePrice}>${product.compare_at_price.toFixed(2)}</span>
                         )}
                       </div>
@@ -261,14 +264,38 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <Button
                     size="sm"
-                    variant={product.is_tracked ? 'secondary' : isProductLimitReached ? 'danger' : 'primary'}
+                    variant={
+                      product.is_tracked
+                        ? product.tracking_status === 'paused_over_limit'
+                          ? 'danger'
+                          : 'secondary'
+                        : isStorePaused || isProductLimitReached
+                        ? 'danger'
+                        : 'primary'
+                    }
                     style={{ width: '100%', marginTop: '12px' }}
                     loading={tracking[product.id]}
-                    disabled={product.is_tracked || isProductLimitReached}
-                    title={isProductLimitReached && !product.is_tracked ? "Tracked product limit reached. Upgrade your plan." : undefined}
-                    onClick={() => !product.is_tracked && handleTrack(product.id)}
+                    disabled={product.is_tracked || isProductLimitReached || isStorePaused}
+                    title={
+                      product.tracking_status === 'paused_over_limit'
+                        ? 'Product is paused due to plan limits.'
+                        : isStorePaused
+                        ? 'Store is paused due to plan limits.'
+                        : isProductLimitReached && !product.is_tracked
+                        ? 'Tracked product limit reached. Upgrade your plan.'
+                        : undefined
+                    }
+                    onClick={() => !product.is_tracked && !isStorePaused && handleTrack(product.id)}
                   >
-                    {product.is_tracked ? '✓ Tracking' : isProductLimitReached ? 'Limit Reached' : 'Track Product'}
+                    {product.is_tracked
+                      ? product.tracking_status === 'paused_over_limit'
+                        ? 'Paused (Plan Limit)'
+                        : '✓ Tracking'
+                      : isStorePaused
+                      ? 'Store Paused'
+                      : isProductLimitReached
+                      ? 'Limit Reached'
+                      : 'Track Product'}
                   </Button>
                 </CardBody>
               </Card>
