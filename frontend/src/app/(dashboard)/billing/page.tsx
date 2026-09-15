@@ -364,8 +364,21 @@ export default function BillingPage() {
       {usage && (
         <Card>
           <CardHeader>
-            <h3>Current Usage & Plan Limits</h3>
-            <Badge variant="accent">{usage.plan_name}</Badge>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3>Current Usage & Plan Limits</h3>
+              <Badge variant="accent">{usage.plan_name}</Badge>
+            </div>
+            {subscription?.current_period_end && subscription.status !== 'canceled' && (() => {
+              const periodEnd = new Date(subscription.current_period_end);
+              const now = new Date();
+              const diffMs = periodEnd.getTime() - now.getTime();
+              const daysLeft = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
+              return (
+                <Badge variant={daysLeft <= 3 ? 'danger' : daysLeft <= 7 ? 'warning' : 'accent'}>
+                  ⏳ {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
+                </Badge>
+              );
+            })()}
           </CardHeader>
           <CardBody>
             <div className={styles.meters}>
@@ -375,12 +388,25 @@ export default function BillingPage() {
                 ⚡ Minimum Monitoring Interval: <strong style={{ color: '#38bdf8' }}>{usage.min_poll_interval_mins} mins</strong>
               </div>
             </div>
-            {subscription?.current_period_end && subscription.status !== 'canceled' && (
-              <p className={styles.renewalNote}>
-                {subscription.status === 'trialing' ? '🎁 Trial ends:' : '🔄 Next renewal:'}
-                {' '}{new Date(subscription.current_period_end).toLocaleDateString()}
-              </p>
-            )}
+            {subscription?.current_period_end && subscription.status !== 'canceled' && (() => {
+              const periodEnd = new Date(subscription.current_period_end);
+              const now = new Date();
+              const diffMs = periodEnd.getTime() - now.getTime();
+              const daysLeft = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
+              return (
+                <p className={styles.renewalNote} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+                  <span>{subscription.status === 'trialing' ? '🎁 Trial ends:' : '🔄 Next renewal:'} {periodEnd.toLocaleDateString()}</span>
+                  <span style={{
+                    background: daysLeft <= 3 ? 'rgba(239, 68, 68, 0.2)' : daysLeft <= 7 ? 'rgba(234, 179, 8, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                    color: daysLeft <= 3 ? '#f87171' : daysLeft <= 7 ? '#facc15' : '#38bdf8',
+                    border: '1px solid currentColor',
+                    padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600
+                  }}>
+                    ⏳ {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
+                  </span>
+                </p>
+              );
+            })()}
           </CardBody>
         </Card>
       )}

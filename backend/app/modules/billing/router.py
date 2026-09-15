@@ -210,6 +210,7 @@ async def get_entitlements(
     )
     sub = sub_result.scalar_one_or_none()
     subscription_status = sub.status if sub else "active"  # free = active
+    period_end_str = sub.current_period_end.isoformat() if (sub and sub.current_period_end) else None
 
     return EntitlementResponse(
         plan_name=summary.plan_name,
@@ -224,6 +225,7 @@ async def get_entitlements(
         poll_interval_mins=summary.min_poll_interval_mins,
         subscription_status=subscription_status,
         is_over_limit=summary.is_over_limit,
+        current_period_end=period_end_str,
     )
 
 
@@ -396,9 +398,13 @@ async def verify_checkout_session_endpoint(
     stripe_customer_id = getattr(session, "customer", None)
     stripe_sub_id = getattr(session, "subscription", None)
 
+    from datetime import timedelta, UTC
+    now = datetime.now(UTC)
+
     if sub:
         sub.plan_id = plan.id
         sub.status = "active"
+        sub.current_period_end = now + timedelta(days=30)
         if stripe_customer_id:
             sub.stripe_customer_id = str(stripe_customer_id)
         if stripe_sub_id:
@@ -409,6 +415,7 @@ async def verify_checkout_session_endpoint(
             user_id=user_id,
             plan_id=plan.id,
             status="active",
+            current_period_end=now + timedelta(days=30),
             stripe_customer_id=str(stripe_customer_id) if stripe_customer_id else None,
             stripe_subscription_id=str(stripe_sub_id) if stripe_sub_id else None,
         )
@@ -499,33 +506,32 @@ async def create_portal(
     """
     Create a Stripe Customer Portal session.
 
-    Users can cancel their subscription, update payment method, or
-    download invoices through the portal. Only available for Stripe-managed subs.
+    If the user has a Stripe customer ID, returns the Stripe Customer Portal URL.
+    Otherwise (for direct/demo subscriptions), gracefully falls back to the demo checkout / billing page URL.
     """
     user_id = uuid.UUID(user_id_str)
 
     sub_result = await db.execute(
         select(Subscription).where(
             Subscription.user_id == user_id,
-            Subscription.stripe_customer_id.is_not(None),
-        ).limit(1)
+        )
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
     )
     sub = sub_result.scalar_one_or_none()
-    if sub is None or not sub.stripe_customer_id:
-        raise HTTPException(
-            status_code=404,
-            detail="No Stripe-managed subscription found. Please use the downgrade/cancel options instead.",
-        )
 
-    try:
-        portal_url = await create_billing_portal_session(
-            customer_id=sub.stripe_customer_id,
-            return_url=data.return_url,
-        )
-    except BillingError as e:
-        _billing_error_to_http(e)
+    if sub and sub.stripe_customer_id:
+        try:
+            portal_url = await create_billing_portal_session(
+                customer_id=sub.stripe_customer_id,
+                return_url=data.return_url,
+            )
+            return BillingPortalResponse(portal_url=portal_url)
+        except Exception as exc:
+            logger.warning("Stripe customer portal error for user %s: %s", user_id, exc)
 
-    return BillingPortalResponse(portal_url=portal_url)
+    # Fallback for demo / direct subscriptions without Stripe customer ID
+    return BillingPortalResponse(portal_url="/billing/demo-checkout?plan_slug=pro")
 
 
 @router.post("/cancel", status_code=200)
@@ -706,6 +712,9 @@ async def admin_assign_user_subscription(
     if plan is None:
         raise HTTPException(status_code=404, detail="Plan not found")
 
+    from datetime import timedelta, UTC
+    now = datetime.now(UTC)
+
     # Upsert subscription
     sub_res = await db.execute(
         select(Subscription)
@@ -717,13 +726,14 @@ async def admin_assign_user_subscription(
     if sub:
         sub.plan_id = plan.id
         sub.status = "active"
-        # Don't clear Stripe fields — admin might be changing plan mid-subscription
+        sub.current_period_end = now + timedelta(days=30)
     else:
         sub = Subscription(
             id=uuid.uuid4(),
             user_id=user_uuid,
             plan_id=plan.id,
             status="active",
+            current_period_end=now + timedelta(days=30),
         )
         db.add(sub)
 

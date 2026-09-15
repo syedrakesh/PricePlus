@@ -82,10 +82,14 @@ class EntitlementService:
         Fetch the highest-value active plan for a user.
 
         Checks subscriptions with status 'active' OR 'trialing'.
-        Falls back to the Free plan DB record if no active subscription is found.
+        Enforces Strict No Grace Period: If current_period_end is in the past,
+        the subscription is marked 'canceled' immediately and falls back to Free plan.
         """
+        from datetime import UTC, datetime
+        now = datetime.now(UTC)
+
         stmt = (
-            select(Plan)
+            select(Plan, Subscription)
             .join(Subscription, Subscription.plan_id == Plan.id)
             .where(
                 Subscription.user_id == user_id,
@@ -94,7 +98,16 @@ class EntitlementService:
             .order_by(Plan.price_usd.desc())  # pick highest-value plan if multiple
         )
         result = await db.execute(stmt)
-        plan = result.scalars().first()
+        rows = result.all()
+
+        plan = None
+        for p, sub in rows:
+            if sub.current_period_end and sub.current_period_end < now:
+                sub.status = "canceled"
+                await db.commit()
+                continue
+            plan = p
+            break
 
         if not plan:
             # Fallback to Free plan from DB (preserves admin-managed limits)

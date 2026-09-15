@@ -82,6 +82,7 @@ class EntitlementResponse(BaseModel):
     poll_interval_mins: int
     subscription_status: str
     is_over_limit: bool = False
+    current_period_end: str | None = None
 
 
 class CreateCheckoutSessionRequest(BaseModel):

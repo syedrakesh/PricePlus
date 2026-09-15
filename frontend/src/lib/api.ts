@@ -320,6 +320,7 @@ export interface Entitlements {
   poll_interval_mins: number;
   subscription_status: string;
   is_over_limit?: boolean;
+  current_period_end?: string | null;
 }
 
 export interface UserUsageSummary {

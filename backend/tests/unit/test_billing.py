@@ -204,7 +204,7 @@ class TestPaymentFailed:
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock())
         result = await _handle_payment_failed(data, db)
-        assert "ok:marked_past_due" in result
+        assert "ok:canceled_no_grace_period" in result
 
     @pytest.mark.asyncio
     async def test_no_sub_id_skipped(self):
@@ -298,3 +298,35 @@ class TestEntitlementSchema:
                 success_url="ftp://bad-url.com",
                 cancel_url="https://good.com",
             )
+
+    @pytest.mark.asyncio
+    async def test_expired_subscription_falls_back_to_free(self):
+        from datetime import UTC, datetime, timedelta
+        from app.modules.billing.entitlements import EntitlementService
+        from app.modules.billing.models import Plan, Subscription
+
+        user_id = uuid.uuid4()
+        free_plan = Plan(id=uuid.uuid4(), name="Free", slug="free", price_usd=0, max_stores=1, max_tracked_products=5)
+        pro_plan = Plan(id=uuid.uuid4(), name="Pro", slug="pro", price_usd=29, max_stores=10, max_tracked_products=100)
+
+        # Expired subscription (period end was 1 day ago)
+        expired_sub = Subscription(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            plan_id=pro_plan.id,
+            status="active",
+            current_period_end=datetime.now(UTC) - timedelta(days=1),
+        )
+
+        db = AsyncMock()
+        # First call returns (pro_plan, expired_sub), second call returns free_plan
+        rows_mock = MagicMock()
+        rows_mock.all.return_value = [(pro_plan, expired_sub)]
+        db.execute = AsyncMock(side_effect=[
+            rows_mock,
+            MagicMock(scalars=lambda: MagicMock(first=lambda: free_plan)),
+        ])
+
+        active_plan = await EntitlementService.get_user_active_plan(user_id, db)
+        assert active_plan.slug == "free"
+        assert expired_sub.status == "canceled"

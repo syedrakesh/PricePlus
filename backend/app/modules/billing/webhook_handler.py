@@ -63,6 +63,7 @@ async def handle_webhook_event(event: stripe.Event, db: AsyncSession) -> str:
         "customer.subscription.deleted": _handle_subscription_deleted,
         "invoice.payment_failed": _handle_payment_failed,
         "invoice.payment_succeeded": _handle_payment_succeeded,
+        "invoice.upcoming": _handle_invoice_upcoming,
     }
 
     handler = handlers.get(event_type)
@@ -224,20 +225,25 @@ async def _handle_subscription_deleted(data: dict, db: AsyncSession) -> str:
 
 async def _handle_payment_failed(data: dict, db: AsyncSession) -> str:
     """
-    invoice.payment_failed — payment declined, subscription goes past_due.
+    invoice.payment_failed — payment declined.
+    Strict No Grace Period: subscription status is immediately canceled.
     """
     stripe_sub_id = data.get("subscription")
     if not stripe_sub_id:
         return "skipped:no_subscription_id"
 
-    await db.execute(
-        update(Subscription)
-        .where(Subscription.stripe_subscription_id == stripe_sub_id)
-        .values(status="past_due")
+    sub_res = await db.execute(
+        select(Subscription).where(Subscription.stripe_subscription_id == stripe_sub_id)
     )
+    sub = sub_res.scalar_one_or_none()
+    if sub:
+        sub.status = "canceled"
+        await db.commit()
+        from app.modules.billing.entitlements import EntitlementService
+        await EntitlementService.sync_user_plan_entitlements(sub.user_id, db)
 
-    logger.warning("Payment failed for subscription: %s", stripe_sub_id)
-    return f"ok:marked_past_due:{stripe_sub_id}"
+    logger.warning("Payment failed for subscription %s: canceled immediately (no grace period)", stripe_sub_id)
+    return f"ok:canceled_no_grace_period:{stripe_sub_id}"
 
 
 async def _handle_payment_succeeded(data: dict, db: AsyncSession) -> str:
@@ -260,6 +266,23 @@ async def _handle_payment_succeeded(data: dict, db: AsyncSession) -> str:
         return f"ok:reactivated:{stripe_sub_id}"
 
     return "skipped:not_past_due"
+
+
+async def _handle_invoice_upcoming(data: dict, db: AsyncSession) -> str:
+    """
+    invoice.upcoming — Stripe event sent 3-7 days before subscription expiration or renewal.
+    Triggers upcoming expiration & renewal notifications.
+    """
+    stripe_sub_id = data.get("subscription")
+    if not stripe_sub_id:
+        return "skipped:no_subscription_id"
+
+    sub = await _get_subscription_by_stripe_id(db, stripe_sub_id)
+    if sub:
+        logger.info("Upcoming subscription renewal/expiration notice for user %s (sub=%s)", sub.user_id, stripe_sub_id)
+        return f"ok:upcoming_notice_logged:{stripe_sub_id}"
+
+    return f"skipped:subscription_not_found:{stripe_sub_id}"
 
 
 # ─── DB helpers ───────────────────────────────────────────────────────────────
