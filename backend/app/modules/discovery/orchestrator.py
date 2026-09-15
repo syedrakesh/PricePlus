@@ -113,7 +113,8 @@ async def run_discovery_pipeline(
             exc,
         )
         await db.rollback()
-        await _fail_run(db, run, f"Unexpected error: {exc}")
+        user_msg, raw_err = _sanitize_discovery_error(exc)
+        await _fail_run(db, run, error_message=user_msg, raw_error=f"Unexpected error: {raw_err}")
         return
 
     # Update store.last_discovery_at
@@ -143,7 +144,13 @@ async def _execute_pipeline(
     try:
         root_xml = await fetch_sitemap(root_sitemap_url, rate_limit_delay=0.0)
     except FetchError as exc:
-        await _fail_run(db, run, f"Failed to fetch root sitemap: {exc}")
+        user_msg, raw_err = _sanitize_discovery_error(exc)
+        await _fail_run(
+            db,
+            run,
+            error_message=user_msg,
+            raw_error=f"Failed to fetch root sitemap ({root_sitemap_url}): {raw_err}",
+        )
         return
 
     # Step 2: Parse root sitemap
@@ -430,6 +437,32 @@ async def _fetch_product_data_batch(
 
 # ─── Run lifecycle helpers ────────────────────────────────────────────────────
 
+def _sanitize_discovery_error(exc: Exception) -> tuple[str, str]:
+    """
+    Given a discovery exception, return a tuple of:
+    (user_friendly_clean_message, raw_technical_error_details)
+    """
+    raw_error = str(exc)
+    raw_lower = raw_error.lower()
+
+    if isinstance(exc, FetchError):
+        status = getattr(exc, "status_code", None)
+        if status == 404 or "not found" in raw_lower:
+            user_msg = "Store sitemap is unavailable or private. Could not automatically discover products."
+        elif status in (401, 403) or "forbidden" in raw_lower or "access denied" in raw_lower:
+            user_msg = "Access to store catalog was restricted by store security settings."
+        elif status == 429 or "rate limit" in raw_lower:
+            user_msg = "Store server rate limit reached. Please try running discovery again later."
+        elif "timeout" in raw_lower or "timed out" in raw_lower:
+            user_msg = "Store server did not respond in time. Please try running discovery again later."
+        else:
+            user_msg = "Unable to fetch store sitemap catalog."
+    else:
+        user_msg = "Product discovery encountered an issue while scanning this store."
+
+    return user_msg, raw_error
+
+
 async def _update_run_status(
     db: AsyncSession,
     run: DiscoveryRun,
@@ -453,9 +486,12 @@ async def _fail_run(
     db: AsyncSession,
     run: DiscoveryRun,
     error_message: str,
+    raw_error: str | None = None,
 ) -> None:
     run.status = "failed"
     run.error_message = error_message
+    if raw_error:
+        run.raw_error = raw_error
     run.completed_at = datetime.now(UTC)
     await db.commit()
-    logger.error("Discovery run %s failed: %s", run.id, error_message)
+    logger.error("Discovery run %s failed: %s (raw: %s)", run.id, error_message, raw_error or error_message)

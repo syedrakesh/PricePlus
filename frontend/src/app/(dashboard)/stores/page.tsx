@@ -241,7 +241,7 @@ export default function StoresPage() {
                   {/* Discovery Failed Box */}
                   {!isRunning && isFailed && run.error_message && (
                     <div className={styles.errorBox}>
-                      ⚠️ Discovery failed: {run.error_message}
+                      ⚠️ Discovery failed. Please try again.
                     </div>
                   )}
 

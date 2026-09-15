@@ -77,6 +77,11 @@ class DiscoveryRun(Base):
     )
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Detailed technical error stack/traceback for internal debugging",
+    )
 
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

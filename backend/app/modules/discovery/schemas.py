@@ -31,6 +31,7 @@ class DiscoveryRunResponse(BaseModel):
     products_fetched: int    # How many .json fetches done — used for ETA
 
     error_message: str | None
+    raw_error: str | None = None
     started_at: str
     completed_at: str | None
 
@@ -54,6 +55,7 @@ class DiscoveryRunResponse(BaseModel):
             products_failed=run.products_failed,
             products_fetched=run.products_fetched,
             error_message=run.error_message,
+            raw_error=getattr(run, "raw_error", None),
             started_at=run.started_at.isoformat(),
             completed_at=run.completed_at.isoformat() if run.completed_at else None,
         )
