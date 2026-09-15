@@ -106,6 +106,11 @@ async def create_checkout_session(
     Returns the session URL to redirect the user to.
     The subscription is created by Stripe and confirmed via webhook.
     """
+    if stripe_price_id.startswith("prod_"):
+        raise BillingError(
+            f"Invalid Stripe Price ID '{stripe_price_id}'. You configured a Product ID ('prod_...'), but Stripe Checkout requires a Price ID ('price_...' or 'price_1...'). Please copy the Price ID from your Stripe Dashboard under Product -> Pricing."
+        )
+
     session = await _run_stripe(
         stripe.checkout.Session.create,
         customer=customer_id,
@@ -122,6 +127,15 @@ async def create_checkout_session(
     )
     logger.info("Created checkout session %s for user %s", session.id, user_id)
     return session.url
+
+
+async def retrieve_checkout_session(session_id: str) -> object:
+    """Retrieve a Stripe Checkout Session by ID (expanded line_items and subscription)."""
+    return await _run_stripe(
+        stripe.checkout.Session.retrieve,
+        session_id,
+        expand=["line_items", "subscription"],
+    )
 
 
 async def create_billing_portal_session(

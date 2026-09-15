@@ -53,8 +53,8 @@ class RefreshRequest(BaseModel):
 # ── Response schemas ──────────────────────────────────────────────────────────
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
+    access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str = "bearer"
     redirect_url: str = "/onboarding"
     checkout_url: str | None = None

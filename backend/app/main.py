@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT TRUE NOT NULL;"))
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE NOT NULL;"))
             await db.execute(text("ALTER TABLE alert_rules ALTER COLUMN tracked_product_id DROP NOT NULL;"))
+            await db.execute(text("UPDATE plans SET stripe_price_id = 'price_' || slug || '_demo' WHERE stripe_price_id IS NULL AND price_usd > 0;"))
             await db.commit()
     except Exception as exc:
         logger.warning("Failed to auto-migrate database columns: %s", exc)

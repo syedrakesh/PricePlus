@@ -355,6 +355,11 @@ export const billingApi = {
     request<{ portal_url: string }>('/billing/portal', {
       method: 'POST', body: JSON.stringify({ return_url: returnUrl }),
     }),
+  verifySession: (sessionId: string) =>
+    request<{ message: string; plan_slug: string; plan_name: string; access_token?: string; refresh_token?: string }>('/billing/verify-session', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId }),
+    }),
 };
 
 export interface PermissionItem {

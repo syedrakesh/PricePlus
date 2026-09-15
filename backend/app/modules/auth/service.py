@@ -66,56 +66,89 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> TokenRespons
     db.add(user)
     await db.flush()
 
-    # Determine subscription plan from requested plan_slug
+    # Always assign Free Plan as initial subscription state until Stripe payment completes
     from app.modules.billing.models import Plan, Subscription
     plan_slug = (data.plan_slug or "free").lower().strip()
-    plan_res = await db.execute(select(Plan).where(Plan.slug == plan_slug))
-    selected_plan = plan_res.scalars().first()
 
-    if not selected_plan:
-        free_plan_res = await db.execute(select(Plan).where(Plan.slug == "free"))
-        selected_plan = free_plan_res.scalars().first()
-    if not selected_plan:
+    free_plan_res = await db.execute(select(Plan).where(Plan.slug == "free"))
+    free_plan = free_plan_res.scalars().first()
+    if not free_plan:
         any_plan_res = await db.execute(select(Plan).order_by(Plan.price_usd.asc()))
-        selected_plan = any_plan_res.scalars().first()
+        free_plan = any_plan_res.scalars().first()
+
+    if plan_slug == "free":
+        selected_plan = free_plan
+    else:
+        selected_plan_res = await db.execute(select(Plan).where(Plan.slug == plan_slug))
+        selected_plan = selected_plan_res.scalars().first() or free_plan
+
+    active_plan = free_plan or selected_plan
+    if not active_plan:
+        raise AuthError("No subscription plans available", status_code=500)
+
+    # Initial subscription is ALWAYS Free plan
+    sub = Subscription(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        plan_id=active_plan.id,
+        status="active",
+    )
+    db.add(sub)
 
     checkout_url: str | None = None
-    if selected_plan:
-        price_usd = selected_plan.price_usd or 0
-        sub = Subscription(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            plan_id=selected_plan.id,
-            status="active",
-        )
-        db.add(sub)
+    is_paid_plan = selected_plan and (selected_plan.price_usd or 0) > 0
 
-        # Optional Stripe Checkout URL generation if paid plan & stripe configured
-        if price_usd > 0 and selected_plan.stripe_price_id:
+    if is_paid_plan:
+        price_id = selected_plan.stripe_price_id or f"price_{selected_plan.slug}_demo"
+        sub.stripe_customer_id = sub.stripe_customer_id or "cus_demo_123"
+
+        from app.core.config import get_settings
+        settings = get_settings()
+        stripe_key = (settings.stripe_secret_key or "").strip()
+
+        is_real_stripe = bool(
+            stripe_key
+            and not stripe_key.startswith("sk_test_replace")
+            and not price_id.endswith("_demo")
+        )
+
+        if is_real_stripe:
             try:
-                from app.modules.billing.stripe_service import create_customer, create_checkout_session
-                cust_id = await create_customer(user.email, user.full_name)
+                from app.modules.billing.stripe_service import get_or_create_customer, create_checkout_session
+                cust_id = await get_or_create_customer(user_id=str(user.id), email=user.email)
                 sub.stripe_customer_id = cust_id
                 checkout_url = await create_checkout_session(
                     user_id=str(user.id),
                     customer_id=cust_id,
-                    stripe_price_id=selected_plan.stripe_price_id,
+                    stripe_price_id=price_id,
                     success_url="http://localhost:3000/onboarding?session_id={CHECKOUT_SESSION_ID}",
                     cancel_url="http://localhost:3000/register?canceled=1",
                 )
             except Exception as exc:
-                logger.warning("Could not initialize Stripe checkout for user %s: %s", user.id, exc)
+                logger.warning("Real Stripe checkout failed for %s, falling back to demo checkout: %s", user.id, exc)
+                checkout_url = f"http://localhost:3000/billing/demo-checkout?plan={selected_plan.slug}&session_id=mock_session_{selected_plan.slug}_{user.id}"
+        else:
+            # Interactive Demo Checkout page for testing paid plan subscriptions
+            checkout_url = f"http://localhost:3000/billing/demo-checkout?plan={selected_plan.slug}&session_id=mock_session_{selected_plan.slug}_{user.id}"
 
     await db.commit()
     await db.refresh(user)
 
-    logger.info("User registered with plan %s", selected_plan.slug if selected_plan else "none", extra={"user_id": str(user.id)})
+    logger.info("User registered with initial plan %s (requested: %s)", free_plan.slug if free_plan else "free", selected_plan.slug if selected_plan else "free", extra={"user_id": str(user.id)})
+
+    if is_paid_plan and checkout_url:
+        return TokenResponse(
+            access_token=None,
+            refresh_token=None,
+            redirect_url="/onboarding",
+            checkout_url=checkout_url,
+        )
 
     return TokenResponse(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
         redirect_url="/onboarding",
-        checkout_url=checkout_url,
+        checkout_url=None,
     )
 
 

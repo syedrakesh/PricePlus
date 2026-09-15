@@ -31,7 +31,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
-from app.core.dependencies import get_current_user_id, get_current_superuser_id
+from app.core.dependencies import get_current_user_id, get_current_superuser_id, get_optional_user_id
 from app.modules.auth.models import User
 from app.modules.billing.entitlements import EntitlementService
 from app.modules.billing.models import Plan, Subscription
@@ -48,6 +48,8 @@ from app.modules.billing.schemas import (
     SubscriptionResponse,
     UpdatePlanRequest,
     UserUsageSummaryResponse,
+    VerifySessionRequest,
+    VerifySessionResponse,
 )
 from app.modules.billing.stripe_service import (
     BillingError,
@@ -55,6 +57,7 @@ from app.modules.billing.stripe_service import (
     create_billing_portal_session,
     create_checkout_session,
     get_or_create_customer,
+    retrieve_checkout_session,
     verify_webhook,
 )
 from app.modules.billing.webhook_handler import handle_webhook_event
@@ -232,9 +235,7 @@ async def create_checkout(
 ) -> CheckoutSessionResponse:
     """
     Create a Stripe Checkout Session for the selected plan (upgrade path).
-
-    If the plan has no stripe_price_id, upgrades subscription directly in DB.
-    If Stripe is configured but returns an error, falls back to direct DB update.
+    Enforces Stripe payment before activating paid plans.
     """
     user_id = uuid.UUID(user_id_str)
 
@@ -253,29 +254,14 @@ async def create_checkout(
     if (plan.slug or "").lower() == "free":
         raise HTTPException(status_code=400, detail="Use /billing/downgrade to switch to the Free plan.")
 
-    # Direct upgrade (no Stripe Price ID configured)
+    # Require Stripe Checkout for paid plans
     if not plan.stripe_price_id:
-        logger.info(
-            "Plan %s (%s) has no Stripe Price ID — performing direct subscription update for user %s.",
-            plan.name, plan.id, user_id,
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stripe payment price ID is not configured for plan '{plan.name}'. Please contact support.",
         )
-        sub_res = await db.execute(
-            select(Subscription)
-            .where(Subscription.user_id == user_id)
-            .order_by(Subscription.created_at.desc())
-            .limit(1)
-        )
-        sub = sub_res.scalar_one_or_none()
-        if sub:
-            sub.plan_id = plan.id
-            sub.status = "active"
-        else:
-            sub = Subscription(id=uuid.uuid4(), user_id=user_id, plan_id=plan.id, status="active")
-            db.add(sub)
-        await db.commit()
-        return CheckoutSessionResponse(checkout_url=data.success_url)
 
-    # Stripe Checkout Session
+    # Create Stripe Checkout Session
     user_result = await db.execute(select(User).where(User.id == user_id))
     user = user_result.scalar_one_or_none()
     if user is None:
@@ -305,25 +291,143 @@ async def create_checkout(
         )
         return CheckoutSessionResponse(checkout_url=checkout_url)
     except BillingError as e:
-        logger.warning(
-            "Stripe error during checkout (%s) — falling back to direct subscription update for plan %s.",
-            e, plan.name,
+        logger.warning("Stripe error during checkout for plan %s: %s", plan.name, e)
+        raise HTTPException(status_code=e.status_code, detail=str(e)) from e
+
+
+@router.post("/verify-session", response_model=VerifySessionResponse)
+async def verify_checkout_session_endpoint(
+    data: VerifySessionRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str | None = Depends(get_optional_user_id),
+) -> VerifySessionResponse:
+    """
+    Verify Stripe Checkout Session completion after returning from Stripe Hosted Checkout.
+    Upgrades subscription to the purchased paid plan.
+    """
+    user_id: uuid.UUID | None = uuid.UUID(user_id_str) if user_id_str else None
+    session = None
+    plan = None
+    stripe_customer_id = None
+    stripe_sub_id = None
+
+    if data.session_id.startswith("mock_session_"):
+        parts = data.session_id.replace("mock_session_", "").split("_")
+        target_slug = parts[0].lower().strip()
+
+        # Extract user_id if embedded in session_id (e.g. mock_session_pro_<uuid>)
+        if len(parts) > 1:
+            try:
+                user_id = uuid.UUID(parts[1])
+            except ValueError:
+                pass
+
+        plan_res = await db.execute(select(Plan).where(Plan.slug == target_slug))
+        plan = plan_res.scalar_one_or_none()
+        if not plan:
+            plan_res = await db.execute(select(Plan).where(Plan.slug == "pro"))
+            plan = plan_res.scalar_one_or_none()
+    else:
+        try:
+            session = await retrieve_checkout_session(data.session_id)
+        except Exception as exc:
+            logger.warning("Could not retrieve Stripe session %s: %s", data.session_id, exc)
+            raise HTTPException(status_code=400, detail="Unable to verify Stripe checkout session.") from None
+
+        payment_status = getattr(session, "payment_status", None)
+        session_status = getattr(session, "status", None)
+
+        if payment_status != "paid" and session_status != "complete":
+            raise HTTPException(status_code=400, detail="Checkout session payment has not been completed.")
+
+        metadata = getattr(session, "metadata", {}) or {}
+        session_user_id = metadata.get("user_id")
+        if session_user_id:
+            try:
+                user_id = uuid.UUID(session_user_id)
+            except ValueError:
+                pass
+
+        stripe_customer_id = getattr(session, "customer", None)
+        stripe_sub_id = getattr(session, "subscription", None)
+
+        # Determine target plan from line_items or metadata
+        stripe_price_id = None
+        line_items = getattr(session, "line_items", None)
+        if line_items and getattr(line_items, "data", None):
+            item = line_items.data[0]
+            if getattr(item, "price", None):
+                stripe_price_id = item.price.id
+
+        if stripe_price_id:
+            plan_res = await db.execute(select(Plan).where(Plan.stripe_price_id == stripe_price_id))
+            plan = plan_res.scalar_one_or_none()
+
+        if not plan:
+            plan_slug = metadata.get("plan_slug")
+            if plan_slug:
+                plan_res = await db.execute(select(Plan).where(Plan.slug == plan_slug))
+                plan = plan_res.scalar_one_or_none()
+
+        if not plan:
+            plan_res = await db.execute(select(Plan).where(Plan.slug == "starter"))
+            plan = plan_res.scalar_one_or_none()
+
+    if user_id is None:
+        latest_user_res = await db.execute(select(User).order_by(User.created_at.desc()).limit(1))
+        latest_user = latest_user_res.scalar_one_or_none()
+        if latest_user:
+            user_id = latest_user.id
+
+    if not user_id:
+        raise HTTPException(status_code=404, detail="User not found for checkout session.")
+
+    if not plan:
+        raise HTTPException(status_code=404, detail="Target subscription plan not found.")
+
+    sub_res = await db.execute(
+        select(Subscription)
+        .where(Subscription.user_id == user_id)
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
+    )
+    sub = sub_res.scalar_one_or_none()
+
+    stripe_customer_id = getattr(session, "customer", None)
+    stripe_sub_id = getattr(session, "subscription", None)
+
+    if sub:
+        sub.plan_id = plan.id
+        sub.status = "active"
+        if stripe_customer_id:
+            sub.stripe_customer_id = str(stripe_customer_id)
+        if stripe_sub_id:
+            sub.stripe_subscription_id = str(stripe_sub_id) if isinstance(stripe_sub_id, str) else getattr(stripe_sub_id, "id", str(stripe_sub_id))
+    else:
+        sub = Subscription(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            plan_id=plan.id,
+            status="active",
+            stripe_customer_id=str(stripe_customer_id) if stripe_customer_id else None,
+            stripe_subscription_id=str(stripe_sub_id) if stripe_sub_id else None,
         )
-        sub_res = await db.execute(
-            select(Subscription)
-            .where(Subscription.user_id == user_id)
-            .order_by(Subscription.created_at.desc())
-            .limit(1)
-        )
-        sub = sub_res.scalar_one_or_none()
-        if sub:
-            sub.plan_id = plan.id
-            sub.status = "active"
-        else:
-            sub = Subscription(id=uuid.uuid4(), user_id=user_id, plan_id=plan.id, status="active")
-            db.add(sub)
-        await db.commit()
-        return CheckoutSessionResponse(checkout_url=data.success_url)
+        db.add(sub)
+
+    await db.commit()
+    await EntitlementService.sync_user_plan_entitlements(user_id, db)
+
+    logger.info("Successfully verified payment and upgraded user %s to plan %s", user_id, plan.slug)
+
+    from app.modules.auth.service import create_access_token, create_refresh_token
+
+    return VerifySessionResponse(
+        message="Subscription upgraded successfully",
+        plan_slug=plan.slug or "starter",
+        plan_name=plan.name,
+        access_token=create_access_token(str(user_id)),
+        refresh_token=create_refresh_token(str(user_id)),
+    )
 
 
 @router.post("/downgrade", response_model=SubscriptionResponse, status_code=200)

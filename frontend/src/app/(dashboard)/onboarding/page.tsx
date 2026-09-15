@@ -1,24 +1,58 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
-import { storesApi, authApi } from '@/lib/api';
+import { storesApi, authApi, billingApi } from '@/lib/api';
+import { saveTokens, isLoggedIn } from '@/lib/auth';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PageLoader } from '@/components/ui/Spinner';
 import styles from './page.module.css';
 
-export default function OnboardingPage() {
+function OnboardingWizard() {
   const router = useRouter();
-  const { data: user, isLoading: userLoading } = useSWR('auth-me', () => authApi.me());
-  const [step, setStep] = useState<1 | 2>(1);
+  const searchParams = useSearchParams();
+  const sessionId = searchParams.get('session_id');
+  const { refreshUser } = useAuth();
 
-  // Form state kept in local memory until Finish button click
+  const [verifyingSession, setVerifyingSession] = useState(!!sessionId && !isLoggedIn());
+  const [sessionSuccessMsg, setSessionSuccessMsg] = useState('');
+
+  // Conditional SWR: Only fetch authApi.me() if logged in OR after payment session verification finishes
+  const { data: user, isLoading: userLoading, mutate: mutateUser } = useSWR(
+    !verifyingSession ? 'auth-me' : null,
+    () => authApi.me()
+  );
+
+  const [step, setStep] = useState<1 | 2>(1);
   const [storeName, setStoreName] = useState('');
   const [storeUrl, setStoreUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Handle Stripe / Dev checkout session verification upon redirect
+  useEffect(() => {
+    if (sessionId) {
+      setVerifyingSession(true);
+      billingApi.verifySession(sessionId)
+        .then((res) => {
+          if (res.access_token && res.refresh_token) {
+            saveTokens(res.access_token, res.refresh_token);
+          }
+          setSessionSuccessMsg(`🎉 ${res.plan_name} Plan Activated!`);
+          refreshUser();
+          mutateUser();
+        })
+        .catch((err: unknown) => {
+          console.warn('Payment verification notice:', err);
+        })
+        .finally(() => {
+          setVerifyingSession(false);
+        });
+    }
+  }, [sessionId, mutateUser, refreshUser]);
 
   // Auto-redirect if onboarding is already completed
   useEffect(() => {
@@ -27,7 +61,7 @@ export default function OnboardingPage() {
     }
   }, [user, router]);
 
-  if (userLoading || user?.onboarding_completed) {
+  if (verifyingSession || userLoading || (user?.onboarding_completed && !sessionSuccessMsg)) {
     return <PageLoader />;
   }
 
@@ -77,7 +111,8 @@ export default function OnboardingPage() {
 
       // 3. Mark onboarding completed in DB
       await authApi.completeOnboarding();
-      router.push('/');
+      await refreshUser();
+      router.replace('/');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
     } finally {
@@ -93,6 +128,22 @@ export default function OnboardingPage() {
         <h1 className={styles.title}>Welcome to PricePlus ⚡</h1>
         <p className={styles.subtitle}>Set up your competitor price tracking in 60 seconds</p>
       </div>
+
+      {sessionSuccessMsg && (
+        <div style={{
+          background: 'rgba(99, 102, 241, 0.15)',
+          border: '1px solid var(--color-accent)',
+          color: 'var(--color-text)',
+          padding: '12px 16px',
+          borderRadius: 'var(--radius-lg)',
+          marginBottom: '20px',
+          textAlign: 'center',
+          fontWeight: 600,
+          fontSize: '14px',
+        }}>
+          {sessionSuccessMsg}
+        </div>
+      )}
 
       {/* Progress Bar */}
       <div className={styles.progressContainer}>
@@ -175,5 +226,13 @@ export default function OnboardingPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <OnboardingWizard />
+    </Suspense>
   );
 }

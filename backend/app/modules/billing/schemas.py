@@ -102,6 +102,18 @@ class BillingPortalResponse(BaseModel):
     portal_url: str
 
 
+class VerifySessionRequest(BaseModel):
+    session_id: str
+
+
+class VerifySessionResponse(BaseModel):
+    message: str
+    plan_slug: str
+    plan_name: str
+    access_token: str | None = None
+    refresh_token: str | None = None
+
+
 class SubscriptionPlanInfo(BaseModel):
     """Embedded plan details inside a SubscriptionResponse."""
     id: str

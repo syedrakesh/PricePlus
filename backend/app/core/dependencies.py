@@ -47,6 +47,21 @@ async def get_current_user_id(
     return user_id
 
 
+async def get_optional_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str | None:
+    """
+    FastAPI dependency: extract user_id from Bearer JWT if provided, or return None.
+    """
+    if credentials is None:
+        return None
+
+    try:
+        return decode_access_token(credentials.credentials)
+    except ValueError:
+        return None
+
+
 async def get_current_active_user(
     user_id_str: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),

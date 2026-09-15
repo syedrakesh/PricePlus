@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { billingApi, Subscription, Plan } from '@/lib/api';
@@ -189,24 +189,41 @@ export default function BillingPage() {
     ]);
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+
+    if (sessionId) {
+      setActionLoading(true);
+      billingApi.verifySession(sessionId)
+        .then(res => {
+          showToast('success', `Payment successful! Upgraded to ${res.plan_name} plan.`);
+          refreshAll();
+        })
+        .catch(err => {
+          console.warn('Session verify note:', err);
+          refreshAll();
+        })
+        .finally(() => {
+          setActionLoading(false);
+          window.history.replaceState({}, '', '/billing');
+        });
+    }
+  }, []);
+
   async function handleUpgrade(planId: string) {
     const origin = window.location.origin;
     setActionLoading(true);
     try {
       const { checkout_url } = await billingApi.checkout(
         planId,
-        `${origin}/billing?success=1`,
+        `${origin}/billing?session_id={CHECKOUT_SESSION_ID}`,
         `${origin}/billing`,
       );
-      if (checkout_url === `${origin}/billing?success=1`) {
-        showToast('success', 'Plan upgraded successfully!');
-        await refreshAll();
-      } else {
-        window.location.href = checkout_url;
-      }
+      window.location.href = checkout_url;
     } catch (e: unknown) {
       showToast('error', e instanceof Error ? e.message : 'Upgrade failed');
-    } finally {
       setActionLoading(false);
     }
   }

@@ -31,11 +31,11 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const tokens = await authApi.register(email, password, fullName || undefined, selectedPlan);
-      saveTokens(tokens.access_token, tokens.refresh_token);
 
       if (tokens.checkout_url) {
         window.location.href = tokens.checkout_url;
-      } else {
+      } else if (tokens.access_token && tokens.refresh_token) {
+        saveTokens(tokens.access_token, tokens.refresh_token);
         router.push(tokens.redirect_url || '/onboarding');
       }
     } catch (err: unknown) {

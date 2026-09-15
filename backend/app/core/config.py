@@ -48,12 +48,12 @@ class Settings(BaseSettings):
     smtp_from_name: str = "PricePlus"
 
     # ── Stripe ────────────────────────────────────────────────────────────────
-    stripe_secret_key: str = ""
-    stripe_publishable_key: str = ""
-    stripe_webhook_secret: str = ""
+    stripe_secret_key: str = "sk_test_replace_me"
+    stripe_publishable_key: str = "pk_test_replace_me"
+    stripe_webhook_secret: str = "whsec_replace_me"
     # Stripe Price IDs for paid plans (set after creating products in Stripe Dashboard)
-    stripe_price_id_starter: str = ""
-    stripe_price_id_pro: str = ""
+    stripe_price_id_starter: str = "price_starter_demo"
+    stripe_price_id_pro: str = "price_pro_demo"
 
     # ── Discovery ─────────────────────────────────────────────────────────────
     discovery_http_timeout: int = 30
