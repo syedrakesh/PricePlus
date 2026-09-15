@@ -49,37 +49,73 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> TokenRespons
     user = User(
         id=uuid.uuid4(),
         email=data.email,
+        full_name=data.full_name,
         password_hash=hash_password(data.password),
         is_active=True,
+        is_verified=True,
+        onboarding_completed=False,
     )
+
+    # Assign default RBAC role ('user')
+    from app.modules.auth.models import Role
+    user_role_res = await db.execute(select(Role).where(Role.slug == "user"))
+    user_role = user_role_res.scalars().first()
+    if user_role:
+        user.role_id = user_role.id
+
     db.add(user)
     await db.flush()
 
-    # Automatically create default Free plan subscription for new user
+    # Determine subscription plan from requested plan_slug
     from app.modules.billing.models import Plan, Subscription
-    free_plan_res = await db.execute(select(Plan).where(Plan.slug == "free"))
-    free_plan = free_plan_res.scalars().first()
-    if not free_plan:
-        any_plan_res = await db.execute(select(Plan).order_by(Plan.price_usd.asc()))
-        free_plan = any_plan_res.scalars().first()
+    plan_slug = (data.plan_slug or "free").lower().strip()
+    plan_res = await db.execute(select(Plan).where(Plan.slug == plan_slug))
+    selected_plan = plan_res.scalars().first()
 
-    if free_plan:
+    if not selected_plan:
+        free_plan_res = await db.execute(select(Plan).where(Plan.slug == "free"))
+        selected_plan = free_plan_res.scalars().first()
+    if not selected_plan:
+        any_plan_res = await db.execute(select(Plan).order_by(Plan.price_usd.asc()))
+        selected_plan = any_plan_res.scalars().first()
+
+    checkout_url: str | None = None
+    if selected_plan:
+        price_usd = selected_plan.price_usd or 0
         sub = Subscription(
             id=uuid.uuid4(),
             user_id=user.id,
-            plan_id=free_plan.id,
+            plan_id=selected_plan.id,
             status="active",
         )
         db.add(sub)
 
+        # Optional Stripe Checkout URL generation if paid plan & stripe configured
+        if price_usd > 0 and selected_plan.stripe_price_id:
+            try:
+                from app.modules.billing.stripe_service import create_customer, create_checkout_session
+                cust_id = await create_customer(user.email, user.full_name)
+                sub.stripe_customer_id = cust_id
+                checkout_url = await create_checkout_session(
+                    user_id=str(user.id),
+                    customer_id=cust_id,
+                    stripe_price_id=selected_plan.stripe_price_id,
+                    success_url="http://localhost:3000/onboarding?session_id={CHECKOUT_SESSION_ID}",
+                    cancel_url="http://localhost:3000/register?canceled=1",
+                )
+            except Exception as exc:
+                logger.warning("Could not initialize Stripe checkout for user %s: %s", user.id, exc)
+
     await db.commit()
     await db.refresh(user)
 
-    logger.info("User registered with default subscription", extra={"user_id": str(user.id)})
+    logger.info("User registered with plan %s", selected_plan.slug if selected_plan else "none", extra={"user_id": str(user.id)})
 
     return TokenResponse(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
+        redirect_url="/onboarding",
+        checkout_url=checkout_url,
     )
 
 

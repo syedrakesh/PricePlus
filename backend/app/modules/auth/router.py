@@ -47,7 +47,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _handle_auth_error(e: AuthError) -> None:
+from typing import NoReturn
+
+
+def _handle_auth_error(e: AuthError) -> NoReturn:
     """Convert domain AuthError to FastAPI HTTPException."""
     raise HTTPException(status_code=e.status_code, detail=str(e))
 
@@ -107,11 +110,24 @@ async def me(
         phone_number=user.phone_number,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        is_verified=getattr(user, "is_verified", True),
+        onboarding_completed=getattr(user, "onboarding_completed", False),
         role_slug=role_slug,
         role_name=role_name,
         permissions=sorted(list(perms)),
         created_at=user.created_at.isoformat(),
     )
+
+
+@router.post("/complete-onboarding", status_code=200)
+async def complete_onboarding(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+) -> dict:
+    """Mark the authenticated user's product onboarding as completed."""
+    user.onboarding_completed = True
+    await db.commit()
+    return {"message": "Onboarding completed successfully", "onboarding_completed": True}
 
 
 @router.patch("/me", response_model=UserResponse)

@@ -14,6 +14,8 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, max_length=150)
+    plan_slug: str = Field(default="free", max_length=50)
 
     @field_validator("password")
     @classmethod
@@ -54,6 +56,8 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    redirect_url: str = "/onboarding"
+    checkout_url: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -63,6 +67,8 @@ class UserResponse(BaseModel):
     phone_number: str | None = None
     is_active: bool
     is_superuser: bool = False
+    is_verified: bool = True
+    onboarding_completed: bool = False
     role_slug: str | None = "user"
     role_name: str | None = "Standard User"
     permissions: list[str] = []

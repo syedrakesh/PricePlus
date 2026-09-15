@@ -54,7 +54,13 @@ async function request<T>(
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-export interface AuthTokens { access_token: string; refresh_token: string; token_type: string; }
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  redirect_url?: string;
+  checkout_url?: string | null;
+}
 export interface User {
   id: string;
   email: string;
@@ -62,6 +68,8 @@ export interface User {
   phone_number: string | null;
   is_active: boolean;
   is_superuser: boolean;
+  is_verified?: boolean;
+  onboarding_completed?: boolean;
   role_slug: string;
   role_name: string;
   permissions: string[];
@@ -69,11 +77,12 @@ export interface User {
 }
 
 export const authApi = {
-  register: (email: string, password: string) =>
-    request<AuthTokens>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  register: (email: string, password: string, full_name?: string, plan_slug: string = 'free') =>
+    request<AuthTokens>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, full_name, plan_slug }) }),
   login: (email: string, password: string) =>
     request<AuthTokens>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: () => request<User>('/auth/me'),
+  completeOnboarding: () => request<{ message: string; onboarding_completed: boolean }>('/auth/complete-onboarding', { method: 'POST' }),
   updateProfile: (data: { full_name?: string | null; email?: string; phone_number?: string | null }) =>
     request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   changePassword: (current_password: string, new_password: string) =>
