@@ -76,6 +76,14 @@ async def add_store(
         status="active",
     )
     db.add(store)
+
+    # Auto-mark onboarding completed for user
+    from app.modules.auth.models import User
+    user_res = await db.execute(select(User).where(User.id == user_id))
+    user = user_res.scalar_one_or_none()
+    if user and not getattr(user, "onboarding_completed", False):
+        user.onboarding_completed = True
+
     await db.commit()
     await db.refresh(store)
 

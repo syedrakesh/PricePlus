@@ -26,6 +26,9 @@ function OnboardingWizard() {
     () => authApi.me()
   );
 
+  // Conditional SWR for user stores: Check if user already has existing stores
+  const { data: storesData } = useSWR(isLoggedIn() && !verifyingSession ? 'onboarding-stores' : null, () => storesApi.list());
+
   const [step, setStep] = useState<1 | 2>(1);
   const [storeName, setStoreName] = useState('');
   const [storeUrl, setStoreUrl] = useState('');
@@ -54,16 +57,20 @@ function OnboardingWizard() {
     }
   }, [sessionId, mutateUser, refreshUser]);
 
-  // Auto-redirect if onboarding is already completed OR if user is an Admin
+  // Auto-redirect if onboarding is already completed, OR if user is Admin, OR if user already has 1+ stores added
   const isAdminUser = user && (isAdmin || user.is_superuser || user.role_slug === 'admin');
+  const hasExistingStore = storesData && storesData.total > 0;
 
   useEffect(() => {
-    if (user?.onboarding_completed || isAdminUser) {
+    if (user?.onboarding_completed || isAdminUser || hasExistingStore) {
+      if (hasExistingStore && !user?.onboarding_completed) {
+        authApi.completeOnboarding().then(() => refreshUser()).catch(() => {});
+      }
       router.replace('/');
     }
-  }, [user, isAdminUser, router]);
+  }, [user, isAdminUser, hasExistingStore, refreshUser, router]);
 
-  if (verifyingSession || userLoading || isAdminUser || (user?.onboarding_completed && !sessionSuccessMsg)) {
+  if (verifyingSession || userLoading || isAdminUser || (user?.onboarding_completed && !sessionSuccessMsg) || (hasExistingStore && !sessionSuccessMsg)) {
     return <PageLoader />;
   }
 
