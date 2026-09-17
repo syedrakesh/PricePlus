@@ -39,6 +39,7 @@ function PlanCard({
   onUpgrade,
   onDowngrade,
   onCancel,
+  onOpenExtend,
   loading,
 }: {
   plan: Plan;
@@ -47,6 +48,7 @@ function PlanCard({
   onUpgrade: (planId: string) => void;
   onDowngrade: (planId: string) => void;
   onCancel: () => void;
+  onOpenExtend: () => void;
   loading: boolean;
 }) {
   const isCurrent = plan.id === currentPlanId;
@@ -88,6 +90,16 @@ function PlanCard({
             {isCurrent ? (
               <>
                 <div className={styles.currentPill}>✓ Active Plan</div>
+                <Button
+                  id={`extend-plan-${plan.id}`}
+                  size="sm"
+                  variant="primary"
+                  onClick={onOpenExtend}
+                  disabled={loading}
+                  style={{ width: '100%' }}
+                >
+                  Extend Subscription ⏳
+                </Button>
                 {isPaid && currentStatus !== 'canceled' && (
                   <Button
                     id={`cancel-plan-${plan.id}`}
@@ -131,6 +143,86 @@ function PlanCard({
   );
 }
 
+// ─── Subscription Extension Modal ──────────────────────────────────────────────
+
+function ExtendSubscriptionModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  currentPeriodEnd,
+  planName,
+  loading,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (months: number) => void;
+  currentPeriodEnd?: string | null;
+  planName?: string;
+  loading: boolean;
+}) {
+  const [selectedMonths, setSelectedMonths] = useState<number>(1);
+
+  if (!isOpen) return null;
+
+  const baseDate = currentPeriodEnd && new Date(currentPeriodEnd) > new Date()
+    ? new Date(currentPeriodEnd)
+    : new Date();
+
+  const newPeriodEnd = new Date(baseDate);
+  newPeriodEnd.setDate(newPeriodEnd.getDate() + selectedMonths * 30);
+
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
+          <h2>⏳ Extend Subscription</h2>
+          <p>Add time to your {planName ? <strong>{planName}</strong> : ''} subscription at any time.</p>
+        </div>
+
+        <div className={styles.durationGrid}>
+          <div
+            className={[styles.durationCard, selectedMonths === 1 ? styles.durationCardSelected : ''].join(' ')}
+            onClick={() => setSelectedMonths(1)}
+          >
+            <div className={styles.durationMonths}>+1 Month</div>
+            <span className={styles.durationBadge}>30 Days</span>
+          </div>
+
+          <div
+            className={[styles.durationCard, selectedMonths === 3 ? styles.durationCardSelected : ''].join(' ')}
+            onClick={() => setSelectedMonths(3)}
+          >
+            <div className={styles.durationMonths}>+3 Months</div>
+            <span className={styles.durationBadge}>90 Days</span>
+          </div>
+
+          <div
+            className={[styles.durationCard, selectedMonths === 12 ? styles.durationCardSelected : ''].join(' ')}
+            onClick={() => setSelectedMonths(12)}
+          >
+            <div className={styles.durationMonths}>+1 Year</div>
+            <span className={styles.durationBadge}>365 Days</span>
+          </div>
+        </div>
+
+        <div className={styles.datePreview}>
+          <div>📅 Current expiration: <strong>{currentPeriodEnd ? new Date(currentPeriodEnd).toLocaleDateString() : 'Active Now'}</strong></div>
+          <div>✨ Extended expiration: <span className={styles.datePreviewHighlight}>{newPeriodEnd.toLocaleDateString()}</span></div>
+        </div>
+
+        <div className={styles.modalActions}>
+          <Button variant="secondary" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => onConfirm(selectedMonths)} disabled={loading}>
+            {loading ? 'Extending...' : `Confirm Extension (+${selectedMonths} mo)`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Status Banner ────────────────────────────────────────────────────────────
 
 function StatusBanner({ subscription }: { subscription: Subscription }) {
@@ -164,8 +256,6 @@ function StatusBanner({ subscription }: { subscription: Subscription }) {
   return null;
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function BillingPage() {
   const { user, isAdmin } = useAuth();
   const { data: plans, isLoading: plansLoading } = useSWR('plans', () => billingApi.plans());
@@ -173,6 +263,7 @@ export default function BillingPage() {
   const { data: subscription, mutate: mutateSubscription } = useSWR('subscription', () => billingApi.subscription());
 
   const [actionLoading, setActionLoading] = useState(false);
+  const [isExtendModalOpen, setIsExtendModalOpen] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   function showToast(type: 'success' | 'error', msg: string) {
@@ -237,6 +328,30 @@ export default function BillingPage() {
     } catch (e: unknown) {
       showToast('error', e instanceof Error ? e.message : 'Plan change failed');
     } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleExtend(months: number) {
+    setIsExtendModalOpen(false);
+    setActionLoading(true);
+    const planIdToUse = currentPlanId || plans?.find(p => p.slug !== 'free')?.id;
+    if (!planIdToUse) {
+      showToast('error', 'No active paid plan available to extend.');
+      setActionLoading(false);
+      return;
+    }
+
+    const origin = window.location.origin;
+    try {
+      const { checkout_url } = await billingApi.checkout(
+        planIdToUse,
+        `${origin}/billing?session_id={CHECKOUT_SESSION_ID}`,
+        `${origin}/billing`,
+      );
+      window.location.href = checkout_url;
+    } catch (e: unknown) {
+      showToast('error', e instanceof Error ? e.message : 'Extension checkout failed');
       setActionLoading(false);
     }
   }
@@ -351,6 +466,9 @@ export default function BillingPage() {
               {subscription.status_label}
             </Badge>
           )}
+          <Button variant="primary" onClick={() => setIsExtendModalOpen(true)} disabled={actionLoading} id="extend-subscription-header-btn">
+            Extend Subscription ⏳
+          </Button>
           {hasStripe && (
             <Button variant="secondary" onClick={handlePortal} disabled={actionLoading} id="manage-subscription-btn">
               Manage Subscription
@@ -368,17 +486,22 @@ export default function BillingPage() {
               <h3>Current Usage & Plan Limits</h3>
               <Badge variant="accent">{usage.plan_name}</Badge>
             </div>
-            {subscription?.current_period_end && subscription.status !== 'canceled' && (() => {
-              const periodEnd = new Date(subscription.current_period_end);
-              const now = new Date();
-              const diffMs = periodEnd.getTime() - now.getTime();
-              const daysLeft = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
-              return (
-                <Badge variant={daysLeft <= 3 ? 'danger' : daysLeft <= 7 ? 'warning' : 'accent'}>
-                  ⏳ {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
-                </Badge>
-              );
-            })()}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {subscription?.current_period_end && subscription.status !== 'canceled' && (() => {
+                const periodEnd = new Date(subscription.current_period_end);
+                const now = new Date();
+                const diffMs = periodEnd.getTime() - now.getTime();
+                const daysLeft = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0;
+                return (
+                  <Badge variant={daysLeft <= 3 ? 'danger' : daysLeft <= 7 ? 'warning' : 'accent'}>
+                    ⏳ {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
+                  </Badge>
+                );
+              })()}
+              <Button size="sm" variant="secondary" onClick={() => setIsExtendModalOpen(true)} disabled={actionLoading}>
+                + Extend Period ⏳
+              </Button>
+            </div>
           </CardHeader>
           <CardBody>
             <div className={styles.meters}>
@@ -421,10 +544,20 @@ export default function BillingPage() {
             onUpgrade={handleUpgrade}
             onDowngrade={handleDowngrade}
             onCancel={handleCancel}
+            onOpenExtend={() => setIsExtendModalOpen(true)}
             loading={actionLoading}
           />
         ))}
       </div>
+
+      <ExtendSubscriptionModal
+        isOpen={isExtendModalOpen}
+        onClose={() => setIsExtendModalOpen(false)}
+        onConfirm={handleExtend}
+        currentPeriodEnd={subscription?.current_period_end}
+        planName={usage?.plan_name || subscription?.plan?.name}
+        loading={actionLoading}
+      />
     </div>
   );
 }

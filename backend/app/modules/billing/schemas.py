@@ -2,7 +2,7 @@
 Pydantic schemas for billing, subscription plans, usage metrics, and superadmin management.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -166,7 +166,7 @@ class SubscriptionResponse(BaseModel):
                 max_stores=plan.max_stores,
                 max_tracked_products=plan.max_tracked_products,
                 poll_interval_mins=plan.poll_interval_mins,
-                max_priority_products=getattr(plan, 'max_priority_products', 0),
+                max_priority_products=getattr(plan, 'max_priority_products', 0) or 0,
                 features=getattr(plan, 'features', {}) or {},
             )
 
@@ -179,7 +179,7 @@ class SubscriptionResponse(BaseModel):
             stripe_customer_id=sub.stripe_customer_id,
             stripe_subscription_id=sub.stripe_subscription_id,
             current_period_end=sub.current_period_end.isoformat() if sub.current_period_end else None,
-            created_at=sub.created_at.isoformat(),
+            created_at=sub.created_at.isoformat() if getattr(sub, 'created_at', None) else datetime.now(UTC).isoformat(),
             is_direct=is_direct,
         )
 
@@ -211,3 +211,18 @@ class AdminAssignSubscriptionRequest(BaseModel):
 class DowngradePlanRequest(BaseModel):
     """Request to downgrade/switch to a lower or equal plan without Stripe Checkout."""
     plan_id: str
+
+
+class ExtendSubscriptionRequest(BaseModel):
+    """Request to extend an existing subscription by a given number of months."""
+    months: int = Field(default=1, ge=1, le=36, description="Number of months to extend subscription by")
+    plan_id: str | None = Field(default=None, description="Optional plan ID if extending and switching plan simultaneously")
+
+
+class ExtendSubscriptionResponse(BaseModel):
+    """Response returned after extending a subscription."""
+    message: str
+    months_added: int
+    new_period_end: str
+    subscription: SubscriptionResponse
+

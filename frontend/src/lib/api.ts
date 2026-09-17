@@ -348,6 +348,11 @@ export const billingApi = {
       method: 'POST',
       body: JSON.stringify({ plan_id: planId }),
     }),
+  extend: (months = 1, planId?: string) =>
+    request<{ message: string; months_added: number; new_period_end: string; subscription: Subscription }>('/billing/extend', {
+      method: 'POST',
+      body: JSON.stringify({ months, plan_id: planId }),
+    }),
   cancel: () =>
     request<{ message: string; current_period_end: string | null }>('/billing/cancel', {
       method: 'POST',

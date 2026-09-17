@@ -330,3 +330,96 @@ class TestEntitlementSchema:
         active_plan = await EntitlementService.get_user_active_plan(user_id, db)
         assert active_plan.slug == "free"
         assert expired_sub.status == "canceled"
+
+
+# ─── Subscription Extension Tests ─────────────────────────────────────────────
+
+class TestSubscriptionExtend:
+    @pytest.mark.asyncio
+    async def test_extend_active_subscription_stacks_days(self):
+        """Extending active subscription adds +30 days per month to existing period end."""
+        from datetime import UTC, datetime, timedelta
+        from app.modules.billing.models import Plan, Subscription
+        from app.modules.billing.router import extend_subscription
+        from app.modules.billing.schemas import ExtendSubscriptionRequest
+
+        user_id = uuid.uuid4()
+        user_id_str = str(user_id)
+        now = datetime.now(UTC)
+        future_end = now + timedelta(days=10)
+
+        plan = Plan(id=uuid.uuid4(), name="Pro", slug="pro", price_usd=29, max_stores=10, max_tracked_products=100, poll_interval_mins=60, max_priority_products=0)
+        sub = Subscription(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            plan_id=plan.id,
+            status="active",
+            current_period_end=future_end,
+        )
+
+        sub_res = MagicMock()
+        sub_res.scalar_one_or_none.return_value = sub
+
+        plan_res = MagicMock()
+        plan_res.scalar_one_or_none.return_value = plan
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[sub_res, plan_res])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+
+        req = ExtendSubscriptionRequest(months=1)
+
+        with patch("app.modules.billing.entitlements.EntitlementService.sync_user_plan_entitlements", new_callable=AsyncMock):
+            res = await extend_subscription(data=req, db=db, user_id_str=user_id_str)
+
+        assert res.months_added == 1
+        assert sub.status == "active"
+        # Verify stacked end date is 10 days + 30 days = 40 days from now
+        assert sub.current_period_end > future_end
+        assert (sub.current_period_end - future_end).days == 30
+
+    @pytest.mark.asyncio
+    async def test_extend_expired_subscription_resets_from_now(self):
+        """Extending expired/canceled subscription resets current_period_end starting from now."""
+        from datetime import UTC, datetime, timedelta
+        from app.modules.billing.models import Plan, Subscription
+        from app.modules.billing.router import extend_subscription
+        from app.modules.billing.schemas import ExtendSubscriptionRequest
+
+        user_id = uuid.uuid4()
+        user_id_str = str(user_id)
+        now = datetime.now(UTC)
+        past_end = now - timedelta(days=5)
+
+        plan = Plan(id=uuid.uuid4(), name="Starter", slug="starter", price_usd=10, max_stores=3, max_tracked_products=30, poll_interval_mins=180, max_priority_products=0)
+        sub = Subscription(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            plan_id=plan.id,
+            status="canceled",
+            current_period_end=past_end,
+        )
+
+        sub_res = MagicMock()
+        sub_res.scalar_one_or_none.return_value = sub
+
+        plan_res = MagicMock()
+        plan_res.scalar_one_or_none.return_value = plan
+
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[sub_res, plan_res])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+
+        req = ExtendSubscriptionRequest(months=3)
+
+        with patch("app.modules.billing.entitlements.EntitlementService.sync_user_plan_entitlements", new_callable=AsyncMock):
+            res = await extend_subscription(data=req, db=db, user_id_str=user_id_str)
+
+        assert res.months_added == 3
+        assert sub.status == "active"
+        # 3 months = 90 days from now
+        assert sub.current_period_end > now
+        assert (sub.current_period_end - now).days >= 89
+

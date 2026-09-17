@@ -44,6 +44,8 @@ from app.modules.billing.schemas import (
     CreatePortalSessionRequest,
     DowngradePlanRequest,
     EntitlementResponse,
+    ExtendSubscriptionRequest,
+    ExtendSubscriptionResponse,
     PlanResponse,
     SubscriptionResponse,
     UpdatePlanRequest,
@@ -404,7 +406,11 @@ async def verify_checkout_session_endpoint(
     if sub:
         sub.plan_id = plan.id
         sub.status = "active"
-        sub.current_period_end = now + timedelta(days=30)
+        # Smart extension/renewal: stack +30 days onto existing active period end if extending early
+        if sub.current_period_end and sub.current_period_end > now:
+            sub.current_period_end = sub.current_period_end + timedelta(days=30)
+        else:
+            sub.current_period_end = now + timedelta(days=30)
         if stripe_customer_id:
             sub.stripe_customer_id = str(stripe_customer_id)
         if stripe_sub_id:
@@ -495,6 +501,92 @@ async def downgrade_plan(
     await db.refresh(sub)
 
     return SubscriptionResponse.from_orm_model(sub, plan)
+
+
+@router.post("/extend", response_model=ExtendSubscriptionResponse, status_code=200)
+async def extend_subscription(
+    data: ExtendSubscriptionRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_superuser_id),
+) -> ExtendSubscriptionResponse:
+    """
+    Extend the user's active subscription period by N months (+30 days * N).
+
+    - Stacks onto existing current_period_end if current_period_end is in the future.
+    - Resets period start from now if current_period_end has expired or is missing.
+    - Reactivates subscription status to 'active' if trialing/canceled/past_due.
+    - Optionally allows switching plan_id at the same time if plan_id is supplied.
+    """
+    user_id = uuid.UUID(user_id_str)
+    months = max(1, data.months)
+
+    # Fetch user's subscription
+    sub_res = await db.execute(
+        select(Subscription)
+        .where(Subscription.user_id == user_id)
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
+    )
+    sub = sub_res.scalar_one_or_none()
+
+    # Determine target plan
+    plan = None
+    if data.plan_id:
+        try:
+            p_uuid = uuid.UUID(data.plan_id)
+            plan_res = await db.execute(select(Plan).where(Plan.id == p_uuid))
+            plan = plan_res.scalar_one_or_none()
+        except ValueError:
+            pass
+
+    if sub:
+        if plan:
+            sub.plan_id = plan.id
+        else:
+            plan_res = await db.execute(select(Plan).where(Plan.id == sub.plan_id))
+            plan = plan_res.scalar_one_or_none()
+    else:
+        # Create new subscription if none exists
+        if not plan:
+            starter_res = await db.execute(select(Plan).where(Plan.slug == "starter"))
+            plan = starter_res.scalar_one_or_none()
+        if not plan:
+            fallback_res = await db.execute(select(Plan).order_by(Plan.price_usd.asc()).limit(1))
+            plan = fallback_res.scalar_one_or_none()
+        if not plan:
+            raise HTTPException(status_code=500, detail="No subscription plan found.")
+
+        sub = Subscription(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            plan_id=plan.id,
+            status="active",
+        )
+        db.add(sub)
+
+    now = datetime.now(UTC)
+    additional_days = 30 * months
+
+    if sub.current_period_end and sub.current_period_end > now:
+        new_period_end = sub.current_period_end + timedelta(days=additional_days)
+    else:
+        new_period_end = now + timedelta(days=additional_days)
+
+    sub.current_period_end = new_period_end
+    sub.status = "active"
+
+    await db.commit()
+    await EntitlementService.sync_user_plan_entitlements(user_id, db)
+    await db.refresh(sub)
+
+    period_end_str = sub.current_period_end.isoformat() if sub.current_period_end else new_period_end.isoformat()
+
+    return ExtendSubscriptionResponse(
+        message=f"Subscription successfully extended by {months} month(s) (+{additional_days} days).",
+        months_added=months,
+        new_period_end=period_end_str,
+        subscription=SubscriptionResponse.from_orm_model(sub, plan),
+    )
 
 
 @router.post("/portal", response_model=BillingPortalResponse)
