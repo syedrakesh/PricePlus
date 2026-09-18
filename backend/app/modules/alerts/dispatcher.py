@@ -280,6 +280,9 @@ async def send_test_notification(
     user_id: uuid.UUID,
     channel: str,
     db: AsyncSession,
+    override_telegram_chat_id: str | None = None,
+    override_telegram_bot_token: str | None = None,
+    override_notification_email: str | None = None,
 ) -> tuple[bool, str]:
     """Send a test notification message for the requested channel (email or telegram)."""
     from app.core.config import get_settings
@@ -293,12 +296,12 @@ async def send_test_notification(
     summary = "🎉 Test Notification from PricePlus! Your notification channel is working correctly."
 
     if channel == "telegram":
-        chat_id = getattr(user, "telegram_chat_id", None)
+        chat_id = (override_telegram_chat_id or "").strip() or getattr(user, "telegram_chat_id", None)
         if not chat_id:
             return False, "Please enter your Telegram Chat ID in settings first."
 
         settings = get_settings()
-        bot_token = getattr(user, "telegram_bot_token", None) or getattr(settings, "telegram_bot_token", None)
+        bot_token = (override_telegram_bot_token or "").strip() or getattr(user, "telegram_bot_token", None) or getattr(settings, "telegram_bot_token", None)
         if not bot_token:
             return False, "Please configure your Telegram Bot Token in settings."
 
@@ -322,7 +325,7 @@ async def send_test_notification(
             return False, f"Failed to send Telegram message: {exc}"
 
     if channel == "email":
-        target_email = getattr(user, "notification_email", None) or user.email
+        target_email = (override_notification_email or "").strip() or getattr(user, "notification_email", None) or user.email
         settings = get_settings()
         if not settings.smtp_username:
             return True, f"Simulated test email sent successfully to {target_email} (SMTP not configured in local environment)."

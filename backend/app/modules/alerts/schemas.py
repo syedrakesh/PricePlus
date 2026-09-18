@@ -136,4 +136,7 @@ class AlertListResponse(BaseModel):
 
 class TestNotificationRequest(BaseModel):
     channel: str = Field(description="email or telegram")
+    telegram_chat_id: str | None = Field(default=None, max_length=100)
+    telegram_bot_token: str | None = Field(default=None, max_length=255)
+    notification_email: str | None = Field(default=None, max_length=254)
 

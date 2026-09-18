@@ -275,10 +275,13 @@ export const alertsApi = {
   toggleRule: (id: string) => request<AlertRule>(`/alert-rules/${id}/toggle`, { method: 'PATCH' }),
   listAlerts: (page = 1) => request<{ alerts: Alert[]; total: number }>(`/alerts?page=${page}`),
   unreadCount: () => request<{ unread_count: number }>('/alerts/unread-count'),
-  sendTestNotification: (channel: 'email' | 'telegram') =>
+  sendTestNotification: (
+    channel: 'email' | 'telegram',
+    overrides?: { telegram_chat_id?: string | null; telegram_bot_token?: string | null; notification_email?: string | null }
+  ) =>
     request<{ success: boolean; message: string }>('/alerts/test-notification', {
       method: 'POST',
-      body: JSON.stringify({ channel }),
+      body: JSON.stringify({ channel, ...overrides }),
     }),
 };
 

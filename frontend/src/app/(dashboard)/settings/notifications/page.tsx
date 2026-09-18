@@ -66,7 +66,9 @@ export default function NotificationSettingsPage() {
   const handleTestEmail = async () => {
     setTestEmailStatus({ loading: true, msg: null, error: false });
     try {
-      const res = await alertsApi.sendTestNotification('email');
+      const res = await alertsApi.sendTestNotification('email', {
+        notification_email: notificationEmail || null,
+      });
       setTestEmailStatus({ loading: false, msg: res.message, error: !res.success });
     } catch (err: unknown) {
       setTestEmailStatus({ loading: false, msg: err instanceof Error ? err.message : 'Test email failed', error: true });
@@ -76,7 +78,10 @@ export default function NotificationSettingsPage() {
   const handleTestTelegram = async () => {
     setTestTelegramStatus({ loading: true, msg: null, error: false });
     try {
-      const res = await alertsApi.sendTestNotification('telegram');
+      const res = await alertsApi.sendTestNotification('telegram', {
+        telegram_chat_id: telegramChatId || null,
+        telegram_bot_token: telegramBotToken || null,
+      });
       setTestTelegramStatus({ loading: false, msg: res.message, error: !res.success });
     } catch (err: unknown) {
       setTestTelegramStatus({ loading: false, msg: err instanceof Error ? err.message : 'Test Telegram failed', error: true });

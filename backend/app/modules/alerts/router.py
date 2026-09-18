@@ -270,7 +270,14 @@ async def test_notification_endpoint(
     user_id = uuid.UUID(user_id_str)
     from app.modules.alerts.dispatcher import send_test_notification
 
-    success, msg = await send_test_notification(user_id, data.channel.lower().strip(), db)
+    success, msg = await send_test_notification(
+        user_id=user_id,
+        channel=data.channel.lower().strip(),
+        db=db,
+        override_telegram_chat_id=data.telegram_chat_id,
+        override_telegram_bot_token=data.telegram_bot_token,
+        override_notification_email=data.notification_email,
+    )
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"success": True, "message": msg}
