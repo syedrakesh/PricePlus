@@ -56,6 +56,10 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, logout, hasPermission } = useAuth();
 
+  const hasExactMatch = NAV_SECTIONS.some(sec =>
+    sec.items.some(i => i.href === pathname)
+  );
+
   return (
     <aside className={styles.sidebar}>
       <div className={styles.logo}>
@@ -76,9 +80,11 @@ export function Sidebar() {
             <div key={section.title || `sec-${idx}`}>
               {section.title && <div className={styles.sectionHeader}>{section.title}</div>}
               {visibleItems.map(item => {
-                const active = item.href === '/'
-                  ? pathname === '/'
-                  : pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href + '/'));
+                const active = hasExactMatch
+                  ? pathname === item.href
+                  : (item.href === '/'
+                    ? pathname === '/'
+                    : pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href + '/')));
 
                 return (
                   <Link
