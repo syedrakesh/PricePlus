@@ -224,8 +224,12 @@ async def _send_telegram_alert(
         if not getattr(user, "telegram_alerts_enabled", True):
             return False, "Telegram alerts disabled in user settings"
 
-        chat_id = getattr(user, "telegram_chat_id", None)
-        if not chat_id:
+        raw_chat_id = getattr(user, "telegram_chat_id", None)
+        if not raw_chat_id:
+            return False, "Telegram chat_id is not configured in user profile settings"
+
+        chat_ids = [c.strip() for c in raw_chat_id.split(",") if c.strip()]
+        if not chat_ids:
             return False, "Telegram chat_id is not configured in user profile settings"
 
         settings = get_settings()
@@ -238,13 +242,21 @@ async def _send_telegram_alert(
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         text_message = f"🔔 *PricePlus Alert*\n\n{summary}"
 
+        success_count = 0
+        errors = []
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(url, json={"chat_id": chat_id, "text": text_message, "parse_mode": "Markdown"})
-            if resp.status_code >= 400:
-                err_body = resp.text[:200]
-                logger.warning("Telegram Bot API returned HTTP %s: %s", resp.status_code, err_body)
-                return False, f"Telegram API HTTP {resp.status_code}: {err_body}"
+            for cid in chat_ids:
+                resp = await client.post(url, json={"chat_id": cid, "text": text_message, "parse_mode": "Markdown"})
+                if resp.status_code >= 400:
+                    err_body = resp.text[:150]
+                    logger.warning("Telegram Bot API returned HTTP %s for %s: %s", resp.status_code, cid, err_body)
+                    errors.append(f"{cid}: HTTP {resp.status_code}")
+                else:
+                    success_count += 1
+
+        if success_count > 0:
             return True, None
+        return False, f"Telegram dispatch failed: {', '.join(errors)}"
 
     except Exception as exc:
         logger.warning("Failed to send Telegram alert: %s", exc)
@@ -296,8 +308,9 @@ async def send_test_notification(
     summary = "🎉 Test Notification from PricePlus! Your notification channel is working correctly."
 
     if channel == "telegram":
-        chat_id = (override_telegram_chat_id or "").strip() or getattr(user, "telegram_chat_id", None)
-        if not chat_id:
+        raw_chat_id = (override_telegram_chat_id or "").strip() or getattr(user, "telegram_chat_id", None) or ""
+        chat_ids = [c.strip() for c in raw_chat_id.split(",") if c.strip()]
+        if not chat_ids:
             return False, "Please enter your Telegram Chat ID in settings first."
 
         settings = get_settings()
@@ -308,19 +321,26 @@ async def send_test_notification(
         import httpx
 
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        success_count = 0
+        errors = []
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    url,
-                    json={
-                        "chat_id": chat_id,
-                        "text": f"🚀 *PricePlus Test Notification*\n\n{summary}",
-                        "parse_mode": "Markdown",
-                    },
-                )
-                if resp.status_code >= 400:
-                    return False, f"Telegram API error (HTTP {resp.status_code}): {resp.text[:150]}"
-                return True, f"Test Telegram message sent successfully to Chat ID {chat_id}!"
+                for cid in chat_ids:
+                    resp = await client.post(
+                        url,
+                        json={
+                            "chat_id": cid,
+                            "text": f"🚀 *PricePlus Test Notification*\n\n{summary}",
+                            "parse_mode": "Markdown",
+                        },
+                    )
+                    if resp.status_code >= 400:
+                        errors.append(f"{cid}: HTTP {resp.status_code}")
+                    else:
+                        success_count += 1
+                if success_count > 0:
+                    return True, f"Test Telegram message sent successfully to {success_count} recipient(s) ({', '.join(chat_ids)})!"
+                return False, f"Telegram API error: {', '.join(errors)}"
         except Exception as exc:
             return False, f"Failed to send Telegram message: {exc}"
 

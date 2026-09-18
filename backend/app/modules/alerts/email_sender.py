@@ -41,41 +41,49 @@ async def send_alert_email(
 
     settings = get_settings()
 
-    # Fetch user email from DB
+    # Fetch user from DB
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(User.email).where(User.id == uuid.UUID(to_user_id))
+            select(User).where(User.id == uuid.UUID(to_user_id))
         )
-        email = result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
 
-    if not email:
+    if not user:
         logger.warning("Cannot send alert email: user %s not found", to_user_id)
         return
 
-    # Build message
-    if html_body is not None:
-        msg = _build_multipart_message(
-            subject=subject,
-            from_name=settings.smtp_from_name,
-            from_email=settings.smtp_from_email,
-            to_email=email,
-            plain_text=body,
-            html=html_body,
-        )
-    else:
-        plain = MIMEText(body, "plain")
-        plain["Subject"] = subject
-        plain["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
-        plain["To"] = email
-        msg = plain
+    raw_email = getattr(user, "notification_email", None) or getattr(user, "email", None) or (user if isinstance(user, str) else None)
+    if not raw_email:
+        logger.warning("Cannot send alert email: no email address configured for user %s", to_user_id)
+        return
 
-    # Send in executor (SMTP is blocking I/O)
+    recipients = [e.strip() for e in raw_email.split(",") if e.strip()]
+
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(
-        None,
-        lambda: _send_smtp(settings, email, msg.as_string()),
-    )
-    logger.info("Alert email sent to %s (subject=%r)", email, subject[:60])
+    for email_addr in recipients:
+        # Build message for each recipient
+        if html_body is not None:
+            msg = _build_multipart_message(
+                subject=subject,
+                from_name=settings.smtp_from_name,
+                from_email=settings.smtp_from_email,
+                to_email=email_addr,
+                plain_text=body,
+                html=html_body,
+            )
+        else:
+            plain = MIMEText(body, "plain")
+            plain["Subject"] = subject
+            plain["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
+            plain["To"] = email_addr
+            msg = plain
+
+        # Send in executor (SMTP is blocking I/O)
+        await loop.run_in_executor(
+            None,
+            lambda target=email_addr, m=msg: _send_smtp(settings, target, m.as_string()),
+        )
+        logger.info("Alert email sent to %s (subject=%r)", email_addr, subject[:60])
 
 
 def _build_multipart_message(

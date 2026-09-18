@@ -136,10 +136,10 @@ export default function NotificationSettingsPage() {
                   Notification Email Address
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   value={notificationEmail}
                   onChange={e => setNotificationEmail(e.target.value)}
-                  placeholder={user?.email || 'user@example.com'}
+                  placeholder="e.g. user1@example.com, team@company.com (comma-separated for multiple)"
                   style={{
                     width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-md)',
                     background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
@@ -147,7 +147,7 @@ export default function NotificationSettingsPage() {
                   }}
                 />
                 <p style={{ fontSize: '12px', color: 'var(--color-text-3)', marginTop: '4px' }}>
-                  Leave empty to use primary account email (<strong>{user?.email}</strong>).
+                  Enter one or multiple recipient emails separated by commas. Leave empty to use primary account email (<strong>{user?.email}</strong>).
                 </p>
               </div>
 
@@ -190,63 +190,63 @@ export default function NotificationSettingsPage() {
           </CardHeader>
           <CardBody>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '6px' }}>
-                Telegram Chat ID
-              </label>
-              <input
-                type="text"
-                value={telegramChatId}
-                onChange={e => setTelegramChatId(e.target.value)}
-                placeholder="e.g. 123456789 or @your_chat_id"
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-md)',
-                  background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                  color: 'var(--color-text)', fontSize: '14px'
-                }}
-              />
-              <p style={{ fontSize: '12px', color: 'var(--color-text-3)', marginTop: '4px' }}>
-                Start a message with <strong>@userinfobot</strong> or <strong>@raw_data_bot</strong> on Telegram to get your numeric Chat ID.
-              </p>
-            </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '6px' }}>
+                  Telegram Chat ID(s)
+                </label>
+                <input
+                  type="text"
+                  value={telegramChatId}
+                  onChange={e => setTelegramChatId(e.target.value)}
+                  placeholder="e.g. 123456789, 987654321, @channel (comma-separated for multiple)"
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                    color: 'var(--color-text)', fontSize: '14px'
+                  }}
+                />
+                <p style={{ fontSize: '12px', color: 'var(--color-text-3)', marginTop: '4px' }}>
+                  Enter one or multiple Chat IDs / Channels separated by commas. Start a chat with <strong><a href="https://t.me/userinfobot">@userinfobot</a></strong> on Telegram to find your Chat ID.
+                </p>
+              </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '6px' }}>
-                Custom Telegram Bot Token (Optional)
-              </label>
-              <input
-                type="password"
-                value={telegramBotToken}
-                onChange={e => setTelegramBotToken(e.target.value)}
-                placeholder="e.g. 123456789:ABCdefGHIjklmNOPqrstUVWxyz"
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-md)',
-                  background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
-                  color: 'var(--color-text)', fontSize: '14px'
-                }}
-              />
-              <p style={{ fontSize: '12px', color: 'var(--color-text-3)', marginTop: '4px' }}>
-                Optional. If left blank, PricePlus uses the default system Telegram bot.
-              </p>
-            </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '6px' }}>
+                  Custom Telegram Bot Token (Optional)
+                </label>
+                <input
+                  type="password"
+                  value={telegramBotToken}
+                  onChange={e => setTelegramBotToken(e.target.value)}
+                  placeholder="e.g. 123456789:ABCdefGHIjklmNOPqrstUVWxyz"
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
+                    color: 'var(--color-text)', fontSize: '14px'
+                  }}
+                />
+                <p style={{ fontSize: '12px', color: 'var(--color-text-3)', marginTop: '4px' }}>
+                  Optional. If left blank, PricePlus uses the default system Telegram bot.
+                </p>
+              </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-              <Button type="button" variant="secondary" size="sm" onClick={handleTestTelegram} disabled={testTelegramStatus.loading}>
-                {testTelegramStatus.loading ? 'Sending Test...' : '🚀 Send Test Telegram Message'}
-              </Button>
-              {testTelegramStatus.msg && (
-                <span style={{
-                  fontSize: '13px',
-                  color: testTelegramStatus.error ? '#f87171' : '#4ade80',
-                  fontWeight: 500
-                }}>
-                  {testTelegramStatus.msg}
-                </span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+                <Button type="button" variant="secondary" size="sm" onClick={handleTestTelegram} disabled={testTelegramStatus.loading}>
+                  {testTelegramStatus.loading ? 'Sending Test...' : '🚀 Send Test Telegram Message'}
+                </Button>
+                {testTelegramStatus.msg && (
+                  <span style={{
+                    fontSize: '13px',
+                    color: testTelegramStatus.error ? '#f87171' : '#4ade80',
+                    fontWeight: 500
+                  }}>
+                    {testTelegramStatus.msg}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        </CardBody>
-      </Card>
+          </CardBody>
+        </Card>
 
         {errorMsg && (
           <div style={{ color: '#f87171', background: 'rgba(239,68,68,0.1)', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: '14px' }}>
