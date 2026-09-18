@@ -62,6 +62,20 @@ class MonitoringEngineManager:
             await self.trigger_now(db, force_all=True)
         return self.get_status_dict()
 
+    async def sync_cycles_from_db(self, db: AsyncSession) -> None:
+        """Sync cumulative cycle count from worker_telemetry_logs database table."""
+        try:
+            from sqlalchemy import select, func
+            from app.modules.monitoring.models import WorkerTelemetryLog
+            res = await db.execute(
+                select(func.count()).where(WorkerTelemetryLog.action == "CYCLE_COMPLETED")
+            )
+            count = res.scalar_one_or_none() or 0
+            if count > self.total_cycles_run:
+                self.total_cycles_run = count
+        except Exception as exc:
+            logger.warning("Failed to sync total cycles count from DB: %s", exc)
+
     async def trigger_now(self, db: AsyncSession, force_all: bool = False) -> dict[str, Any]:
         """Trigger a monitoring cycle immediately."""
         async with self._lock:
@@ -76,6 +90,16 @@ class MonitoringEngineManager:
                 self.next_run_at = datetime.now(UTC) + timedelta(seconds=self.interval_seconds)
                 if self.is_running:
                     self.status = "running"
+
+                from app.modules.monitoring.telemetry import worker_telemetry
+                worker_telemetry.record_event(
+                    action="CYCLE_COMPLETED",
+                    product_title=f"Monitoring Cycle #{self.total_cycles_run}",
+                    store_domain="System Engine",
+                    status_code=200,
+                    details=f"Polled {self.last_polled_count} items, {self.last_changes_count} price changes, {self.last_error_count} errors",
+                )
+
                 return res
             except Exception as exc:
                 self.last_error_message = str(exc)
@@ -90,9 +114,10 @@ class MonitoringEngineManager:
         # Short initial delay on startup so DB migrations/seeds complete cleanly
         await asyncio.sleep(2)
         
-        # Perform initial cycle on engine launch (polls due products or forces initial check)
+        # Perform initial cycle on engine launch and sync historical counts
         try:
             async with AsyncSessionLocal() as db:
+                await self.sync_cycles_from_db(db)
                 await self.trigger_now(db, force_all=True)
         except Exception as exc:
             logger.warning("Initial monitoring run error: %s", exc)
