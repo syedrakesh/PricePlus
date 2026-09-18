@@ -72,7 +72,7 @@ class AlertRule(Base):
     )
 
     # Delivery settings
-    channel: Mapped[str] = mapped_column(String(20), nullable=False, default="email")
+    channel: Mapped[str] = mapped_column(String(100), nullable=False, default="email")
     webhook_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
@@ -121,7 +121,7 @@ class Alert(Base):
     )
 
     # Delivery status
-    channel: Mapped[str] = mapped_column(String(20), nullable=False, default="email")
+    channel: Mapped[str] = mapped_column(String(100), nullable=False, default="email")
     delivered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -259,8 +259,9 @@ async def update_alert_rule(
         raise HTTPException(status_code=400, detail=f"threshold_pct is required for condition_type={rule.condition_type!r}")
     if rule.condition_type in price_conditions and rule.threshold_price is None:
         raise HTTPException(status_code=400, detail=f"threshold_price is required for condition_type={rule.condition_type!r}")
-    if rule.channel == "webhook" and not rule.webhook_url:
-        raise HTTPException(status_code=400, detail="webhook_url is required when channel='webhook'")
+    channels = [c.strip() for c in rule.channel.split(",") if c.strip()]
+    if "webhook" in channels and not rule.webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required when channel includes 'webhook'")
 
     await db.commit()
     await db.refresh(rule)

@@ -20,5 +20,5 @@ def test_update_alert_rule_schema_validation():
         UpdateAlertRuleRequest(condition_type="invalid_type")
 
     # Invalid channel
-    with pytest.raises(ValueError, match="channel must be one of"):
+    with pytest.raises(ValueError, match="Invalid channel"):
         UpdateAlertRuleRequest(channel="invalid_channel")

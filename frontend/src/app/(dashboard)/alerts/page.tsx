@@ -43,10 +43,20 @@ export default function AlertsPage() {
   const [conditionType, setConditionType] = useState('price_drop_pct');
   const [thresholdPct, setThresholdPct] = useState('5');
   const [thresholdPrice, setThresholdPrice] = useState('');
-  const [channel, setChannel] = useState('email');
+  const [selectedChannels, setSelectedChannels] = useState<string[]>(['email']);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+
+  function toggleChannel(ch: string) {
+    setSelectedChannels(prev => {
+      if (prev.includes(ch)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(c => c !== ch);
+      }
+      return [...prev, ch];
+    });
+  }
 
   function openCreateModal() {
     setEditingRuleId(null);
@@ -55,7 +65,7 @@ export default function AlertsPage() {
     setConditionType('price_drop_pct');
     setThresholdPct('5');
     setThresholdPrice('');
-    setChannel('email');
+    setSelectedChannels(['email']);
     setWebhookUrl('');
     setCreateError('');
     setShowModal(true);
@@ -68,7 +78,8 @@ export default function AlertsPage() {
     setConditionType(rule.condition_type || 'price_drop_pct');
     setThresholdPct(rule.threshold_pct !== null && rule.threshold_pct !== undefined ? String(rule.threshold_pct) : '');
     setThresholdPrice(rule.threshold_price !== null && rule.threshold_price !== undefined ? String(rule.threshold_price) : '');
-    setChannel(rule.channel || 'email');
+    const chList = rule.channel ? rule.channel.split(',').map(c => c.trim()).filter(Boolean) : ['email'];
+    setSelectedChannels(chList.length ? chList : ['email']);
     setWebhookUrl(rule.webhook_url || '');
     setCreateError('');
     setShowModal(true);
@@ -81,6 +92,11 @@ export default function AlertsPage() {
       return;
     }
 
+    if (!selectedChannels.length) {
+      setCreateError('Please select at least one notification channel');
+      return;
+    }
+
     setCreateError('');
     setCreating(true);
     try {
@@ -89,8 +105,8 @@ export default function AlertsPage() {
         condition_type: conditionType,
         threshold_pct: conditionType.includes('pct') && thresholdPct ? parseFloat(thresholdPct) : null,
         threshold_price: (conditionType === 'price_below' || conditionType === 'price_above') && thresholdPrice ? parseFloat(thresholdPrice) : null,
-        channel: channel,
-        webhook_url: channel === 'webhook' ? webhookUrl : null,
+        channel: selectedChannels.join(','),
+        webhook_url: selectedChannels.includes('webhook') ? webhookUrl : null,
       };
 
       if (editingRuleId) {
@@ -158,7 +174,9 @@ export default function AlertsPage() {
                   ) : (
                     <Badge variant="default">Specific Product</Badge>
                   )}
-                  <Badge variant="default">{rule.channel}</Badge>
+                  {rule.channel.split(',').map(ch => (
+                    <Badge key={ch.trim()} variant="default">{ch.trim()}</Badge>
+                  ))}
                   <StatusBadge status={rule.is_enabled ? 'active' : 'paused'} />
                   {rule.last_triggered_at && (
                     <span className={styles.ruleTriggered}>
@@ -348,24 +366,42 @@ export default function AlertsPage() {
               )}
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '4px' }}>
-                  Notification Channel
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '6px' }}>
+                  Notification Channels (Select one or more)
                 </label>
-                <select
-                  value={channel}
-                  onChange={e => setChannel(e.target.value)}
-                  style={{
-                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text)', fontSize: '14px'
-                  }}
-                >
-                  <option value="email">📧 Email Notification</option>
-                  <option value="telegram">✈️ Telegram Notification</option>
-                  <option value="webhook">🔗 Custom Webhook</option>
-                </select>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {[
+                    { id: 'email', label: '📧 Email' },
+                    { id: 'telegram', label: '✈️ Telegram' },
+                    { id: 'webhook', label: '🔗 Webhook' },
+                  ].map(ch => {
+                    const active = selectedChannels.includes(ch.id);
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => toggleChannel(ch.id)}
+                        style={{
+                          padding: '10px 6px',
+                          borderRadius: 'var(--radius-md)',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                          border: active ? '2px solid var(--color-accent)' : '1px solid var(--color-border)',
+                          background: active ? 'rgba(59,130,246,0.12)' : 'var(--color-surface-2)',
+                          color: active ? 'var(--color-accent)' : 'var(--color-text)',
+                          fontWeight: 600,
+                          fontSize: '13px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {active ? '✓ ' : ''}{ch.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {channel === 'webhook' && (
+              {selectedChannels.includes('webhook') && (
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '4px' }}>
                     Webhook URL

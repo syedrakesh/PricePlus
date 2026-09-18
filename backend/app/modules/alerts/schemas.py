@@ -17,6 +17,27 @@ VALID_CONDITION_TYPES = {
 VALID_CHANNELS = {"email", "telegram", "webhook"}
 
 
+def normalize_and_validate_channels(v: str | list | None) -> str | None:
+    if v is None:
+        return None
+    if isinstance(v, str):
+        raw_list = [c.strip().lower() for c in v.split(",") if c.strip()]
+    elif isinstance(v, (list, set, tuple)):
+        raw_list = [str(c).strip().lower() for c in v if str(c).strip()]
+    else:
+        raise ValueError("channel must be a string or list of strings")
+
+    if not raw_list:
+        raise ValueError("At least one notification channel must be selected")
+
+    invalid = [c for c in raw_list if c not in VALID_CHANNELS]
+    if invalid:
+        raise ValueError(f"Invalid channel(s): {', '.join(invalid)}. Must be among: {', '.join(sorted(VALID_CHANNELS))}")
+
+    unique_channels = list(dict.fromkeys(raw_list))
+    return ",".join(unique_channels)
+
+
 class CreateAlertRuleRequest(BaseModel):
     tracked_product_id: str | None = Field(default=None, description="Optional. If omitted, rule applies to ALL tracked products.")
     condition_type: str = Field(description=", ".join(sorted(VALID_CONDITION_TYPES)))
@@ -42,12 +63,13 @@ class CreateAlertRuleRequest(BaseModel):
             raise ValueError(f"condition_type must be one of: {', '.join(sorted(VALID_CONDITION_TYPES))}")
         return v
 
-    @field_validator("channel")
+    @field_validator("channel", mode="before")
     @classmethod
-    def validate_channel(cls, v: str) -> str:
-        if v not in VALID_CHANNELS:
-            raise ValueError(f"channel must be one of: {', '.join(VALID_CHANNELS)}")
-        return v
+    def validate_channel(cls, v: str | list) -> str:
+        res = normalize_and_validate_channels(v)
+        if res is None:
+            raise ValueError("channel is required")
+        return res
 
     def model_post_init(self, __context: object) -> None:
         pct_conditions = {"price_drop_pct", "price_increase_pct"}
@@ -56,8 +78,9 @@ class CreateAlertRuleRequest(BaseModel):
             raise ValueError(f"threshold_pct is required for condition_type={self.condition_type!r}")
         if self.condition_type in price_conditions and self.threshold_price is None:
             raise ValueError(f"threshold_price is required for condition_type={self.condition_type!r}")
-        if self.channel == "webhook" and not self.webhook_url:
-            raise ValueError("webhook_url is required when channel='webhook'")
+        channels = [c.strip() for c in self.channel.split(",") if c.strip()]
+        if "webhook" in channels and not self.webhook_url:
+            raise ValueError("webhook_url is required when channel includes 'webhook'")
 
 
 class UpdateAlertRuleRequest(BaseModel):
@@ -77,12 +100,10 @@ class UpdateAlertRuleRequest(BaseModel):
             raise ValueError(f"condition_type must be one of: {', '.join(sorted(VALID_CONDITION_TYPES))}")
         return v
 
-    @field_validator("channel")
+    @field_validator("channel", mode="before")
     @classmethod
-    def validate_channel(cls, v: str | None) -> str | None:
-        if v is not None and v not in VALID_CHANNELS:
-            raise ValueError(f"channel must be one of: {', '.join(VALID_CHANNELS)}")
-        return v
+    def validate_channel(cls, v: str | list | None) -> str | None:
+        return normalize_and_validate_channels(v)
 
 
 class AlertRuleResponse(BaseModel):

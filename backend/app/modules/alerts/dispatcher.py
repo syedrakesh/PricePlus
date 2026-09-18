@@ -162,19 +162,33 @@ async def _dispatch_notification(
     db: AsyncSession,
 ) -> tuple[bool, str | None]:
     """
-    Send the notification via the configured channel.
+    Send notifications via all configured channels in rule.channel (comma-separated).
     Returns (delivered: bool, error_message: str | None).
     """
-    if rule.channel == "email":
-        return await _send_email_alert(rule, alert, summary)
+    channels = [c.strip().lower() for c in rule.channel.split(",") if c.strip()]
+    if not channels:
+        return False, "No notification channels configured"
 
-    if rule.channel == "telegram":
-        return await _send_telegram_alert(rule, alert, summary, db)
+    results: list[bool] = []
+    errors: list[str] = []
 
-    if rule.channel == "webhook":
-        return await _send_webhook_alert(rule, summary)
+    for ch in channels:
+        if ch == "email":
+            ok, err = await _send_email_alert(rule, alert, summary)
+        elif ch == "telegram":
+            ok, err = await _send_telegram_alert(rule, alert, summary, db)
+        elif ch == "webhook":
+            ok, err = await _send_webhook_alert(rule, summary)
+        else:
+            ok, err = False, f"Unknown channel: {ch!r}"
 
-    return False, f"Unknown channel: {rule.channel!r}"
+        results.append(ok)
+        if err:
+            errors.append(f"{ch}: {err}")
+
+    delivered = any(results)
+    error_msg = "; ".join(errors) if errors else None
+    return delivered, error_msg
 
 
 async def _send_email_alert(
