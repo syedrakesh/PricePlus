@@ -3,15 +3,18 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { monitoringApi } from '@/lib/api';
-import { Card, CardHeader } from '@/components/ui/Card';
+import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { PageLoader, EmptyState } from '@/components/ui/Spinner';
+import { TelemetryCharts } from '@/components/charts/TelemetryCharts';
 import styles from './page.module.css';
 
 export default function OperationsSystemPage() {
   const [triggering, setTriggering] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
+  const [actionFilter, setActionFilter] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Poll telemetry endpoint every 2000ms for live real-time stream
   const { data, isLoading, mutate } = useSWR(
@@ -80,24 +83,32 @@ export default function OperationsSystemPage() {
 
   const statusBadge = (code: number) => {
     if (code >= 200 && code < 300) {
-      return <span style={{ color: '#10B981', fontWeight: 600, fontSize: '12px' }}>{code} OK</span>;
+      return <span style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: 'var(--text-xs)' }}>{code} OK</span>;
     }
     if (code === 404) {
-      return <span style={{ color: '#F59E0B', fontWeight: 600, fontSize: '12px' }}>404 Not Found</span>;
+      return <span style={{ color: 'var(--color-warning)', fontWeight: 600, fontSize: 'var(--text-xs)' }}>404 Not Found</span>;
     }
-    return <span style={{ color: '#EF4444', fontWeight: 600, fontSize: '12px' }}>{code} Error</span>;
+    return <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: 'var(--text-xs)' }}>{code} Error</span>;
   };
 
+  const rawEvents = data?.live_pulls || [];
+
+  const filteredEvents = rawEvents.filter(evt => {
+    const matchesAction = actionFilter === 'ALL' || evt.action === actionFilter;
+    const matchesQuery = !searchQuery ||
+      evt.product_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      evt.store_domain.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      evt.details.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesAction && matchesQuery;
+  });
+
   return (
-    <div className={styles.container}>
+    <div className={styles.page}>
       <div className={styles.header}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h1 className={styles.title}>Operations & Engine Telemetry</h1>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(16,185,129,0.15)',
-              color: '#10B981', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 700
-            }}>
+          <div className={styles.headerTitleGroup}>
+            <h1>Operations & Engine Telemetry</h1>
+            <span className={styles.liveBadge}>
               <span className={styles.pulseDot} /> LIVE (2s)
             </span>
           </div>
@@ -108,7 +119,7 @@ export default function OperationsSystemPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className={styles.headerActions}>
           {data?.is_admin ? (
             <>
               <Button size="sm" variant="secondary" onClick={handleRestartEngine} disabled={triggering}>
@@ -127,93 +138,167 @@ export default function OperationsSystemPage() {
       </div>
 
       {actionMsg && (
-        <div style={{
-          background: actionMsg.startsWith('⚠️') ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
-          color: actionMsg.startsWith('⚠️') ? 'var(--color-danger)' : '#10B981',
-          padding: '10px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', fontWeight: 600
-        }}>
+        <div className={actionMsg.startsWith('⚠️') ? styles.bannerError : styles.bannerSuccess}>
           {actionMsg}
         </div>
       )}
 
       {/* Summary KPI Ribbon */}
-      <div className={styles.kpiGrid}>
-        <div className={styles.kpiCard}>
-          <span className={styles.kpiLabel}>Engine State</span>
-          <span className={styles.kpiValue} style={{ textTransform: 'uppercase', color: 'var(--color-accent)' }}>
-            {data?.engine_status ?? 'RUNNING'}
-          </span>
-        </div>
-        <div className={styles.kpiCard}>
-          <span className={styles.kpiLabel}>Total Cycles Run</span>
-          <span className={styles.kpiValue}>{data?.total_cycles_run ?? 0}</span>
-        </div>
-        <div className={styles.kpiCard}>
-          <span className={styles.kpiLabel}>Last Polled Items</span>
-          <span className={styles.kpiValue}>{data?.last_polled_count ?? 0}</span>
-        </div>
-        <div className={styles.kpiCard}>
-          <span className={styles.kpiLabel}>Last Price Changes</span>
-          <span className={styles.kpiValue} style={{ color: '#10B981' }}>{data?.last_changes_count ?? 0}</span>
-        </div>
-        <div className={styles.kpiCard}>
-          <span className={styles.kpiLabel}>Error Count</span>
-          <span className={styles.kpiValue} style={{ color: data?.last_error_count ? '#EF4444' : 'var(--color-text-2)' }}>
-            {data?.last_error_count ?? 0}
-          </span>
-        </div>
+      <div className={styles.stats}>
+        <Card>
+          <CardBody>
+            <div className={styles.stat}>
+              <span className={styles.statIcon}>⚙️</span>
+              <div>
+                <div className={styles.statValue} style={{ textTransform: 'uppercase', color: 'var(--color-accent)' }}>
+                  {data?.engine_status ?? 'RUNNING'}
+                </div>
+                <div className={styles.statLabel}>Engine State</div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody>
+            <div className={styles.stat}>
+              <span className={styles.statIcon}>🔄</span>
+              <div>
+                <div className={styles.statValue}>{data?.total_cycles_run ?? 0}</div>
+                <div className={styles.statLabel}>Total Cycles Run</div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody>
+            <div className={styles.stat}>
+              <span className={styles.statIcon}>📡</span>
+              <div>
+                <div className={styles.statValue}>{data?.last_polled_count ?? 0}</div>
+                <div className={styles.statLabel}>Last Polled Items</div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody>
+            <div className={styles.stat}>
+              <span className={styles.statIcon}>📈</span>
+              <div>
+                <div className={styles.statValue} style={{ color: 'var(--color-success)' }}>
+                  {data?.last_changes_count ?? 0}
+                </div>
+                <div className={styles.statLabel}>Last Price Changes</div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody>
+            <div className={styles.stat}>
+              <span className={styles.statIcon}>⚠️</span>
+              <div>
+                <div className={styles.statValue} style={{ color: data?.last_error_count ? 'var(--color-danger)' : 'var(--color-text-2)' }}>
+                  {data?.last_error_count ?? 0}
+                </div>
+                <div className={styles.statLabel}>Error Count</div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
       </div>
 
-      {/* Worker Pool Cards */}
-      <div style={{ marginBottom: '24px' }}>
-        <Card>
+      {/* Interactive Visual Telemetry Charts & Analytics */}
+      <Card>
         <CardHeader>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className={styles.streamHeaderLeft}>
+            <h3>Visual Telemetry & Execution Analytics</h3>
+            <Badge variant="accent">Real-Time Charts</Badge>
+          </div>
+        </CardHeader>
+        <CardBody>
+          <TelemetryCharts events={rawEvents} />
+        </CardBody>
+      </Card>
+
+      {/* Worker Pool Cards */}
+      <Card>
+        <CardHeader>
+          <div className={styles.streamHeaderLeft}>
             <h3>Worker Pool Breakdown</h3>
             <Badge variant="accent">{data?.workers?.length ?? 3} Workers Active</Badge>
           </div>
         </CardHeader>
-        <div className={styles.workerGrid}>
-          {data?.workers?.map((w, idx) => (
-            <div key={idx} className={styles.workerCard}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <h4 className={styles.workerName}>{w.name}</h4>
-                <StatusBadge status={w.status === 'ACTIVE' ? 'active' : 'paused'} />
+        <CardBody>
+          <div className={styles.workerGrid}>
+            {data?.workers?.map((w, idx) => (
+              <div key={idx} className={styles.workerCard}>
+                <div className={styles.workerHeader}>
+                  <h4 className={styles.workerName}>{w.name}</h4>
+                  <StatusBadge status={w.status === 'ACTIVE' ? 'active' : 'paused'} />
+                </div>
+                <p className={styles.workerTask}>{w.current_task}</p>
+                <div className={styles.workerMeta}>
+                  <span>Concurrency: <strong>{w.concurrency || 'Async Loop'}</strong></span>
+                  {w.throughput_cycles !== undefined && (
+                    <span>Cycles: <strong>{w.throughput_cycles}</strong></span>
+                  )}
+                </div>
               </div>
-              <p className={styles.workerTask}>{w.current_task}</p>
-              <div className={styles.workerMeta}>
-                <span>Concurrency: <strong>{w.concurrency || 'Async Loop'}</strong></span>
-                {w.throughput_cycles !== undefined && (
-                  <span>Cycles: <strong>{w.throughput_cycles}</strong></span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </CardBody>
       </Card>
-    </div>
 
       {/* Live Pull Stream Feed */}
       <Card>
         <CardHeader>
-          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className={styles.streamHeader}>
+            <div className={styles.streamHeaderLeft}>
               <h3>Real-Time Live Pull Stream Feed</h3>
-              <Badge variant="default">{data?.live_pulls?.length ?? 0} Events Recorded</Badge>
+              <Badge variant="default">{filteredEvents.length} Events Displayed</Badge>
             </div>
-            <span style={{ fontSize: '12px', color: 'var(--color-text-2)' }}>
+            <span className={styles.streamHeaderSub}>
               Auto-updating ring buffer (last 50 actions)
             </span>
           </div>
         </CardHeader>
 
+        {/* Action & Search Filter Toolbar */}
+        <div className={styles.filterToolbar}>
+          <div className={styles.filterPills}>
+            {['ALL', 'PULLED', 'DISCOVERED', 'DISPATCHED', 'ERROR'].map((act) => (
+              <button
+                key={act}
+                onClick={() => setActionFilter(act)}
+                className={`${styles.filterPill} ${actionFilter === act ? styles.filterPillActive : ''}`}
+              >
+                {act === 'ALL' ? '🌐 All Events' : act}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            placeholder="🔍 Filter product, domain, details..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={styles.filterSearchInput}
+          />
+        </div>
+
         {isLoading && !data ? (
           <PageLoader />
-        ) : !data?.live_pulls?.length ? (
+        ) : !filteredEvents.length ? (
           <EmptyState
             icon="🛰️"
-            title="Waiting for live worker actions..."
-            description="Live item pulls, price checks, and discovery events will stream here automatically in real time as background workers execute."
+            title="No matching worker actions"
+            description={searchQuery || actionFilter !== 'ALL'
+              ? "No telemetry events match your current filter criteria."
+              : "Live item pulls, price checks, and discovery events will stream here automatically in real time as background workers execute."}
           />
         ) : (
           <div className={styles.streamTableWrapper}>
@@ -231,7 +316,7 @@ export default function OperationsSystemPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.live_pulls.map((evt) => (
+                {filteredEvents.map((evt) => (
                   <tr key={evt.id}>
                     <td className={styles.timeCell}>
                       {new Date(evt.timestamp).toLocaleTimeString()}

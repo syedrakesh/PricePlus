@@ -7,8 +7,9 @@
   --color-surface:     #0f1420;
   --color-surface-2:   #161c2e;
   --color-surface-3:   #1d2540;
-  --color-border:      #1f2a47;
-  --color-border-2:    #2a3860;
+  --color-border:      rgba(255, 255, 255, 0.14);
+  --color-border-2:    rgba(255, 255, 255, 0.24);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
 
   /* Brand */
   --color-accent:      #6366f1;

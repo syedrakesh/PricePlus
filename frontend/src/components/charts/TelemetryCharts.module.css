@@ -1,0 +1,139 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.emptyCharts {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  gap: var(--space-2);
+}
+
+.emptyCharts span {
+  font-size: 32px;
+}
+
+.visualStatsRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.visualStatCard {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.visualStatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-2);
+}
+
+.visualStatBadge {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--color-accent);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.sparklineBar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.sparklineFill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+.chartsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+.chartBox {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.chartHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.chartTitle {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.chartSub {
+  font-size: var(--text-xs);
+  color: var(--color-text-3);
+}
+
+.chartCanvas {
+  width: 100%;
+  height: 200px;
+}
+
+.tooltip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-2);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tooltipTime {
+  color: var(--color-text-3);
+  font-family: var(--font-mono);
+}
+
+.tooltipTitle {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.tooltipMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-text-2);
+  padding-top: var(--space-1);
+  border-top: 1px dashed var(--color-border);
+}
