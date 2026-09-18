@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { monitoringApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -15,6 +15,7 @@ export default function OperationsSystemPage() {
   const [actionMsg, setActionMsg] = useState('');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [elapsedSec, setElapsedSec] = useState<number>(0);
 
   // Poll telemetry endpoint every 2000ms for live real-time stream
   const { data, isLoading, mutate } = useSWR(
@@ -22,6 +23,21 @@ export default function OperationsSystemPage() {
     () => monitoringApi.getWorkerTelemetry(),
     { refreshInterval: 2000 }
   );
+
+  // Reset elapsed counter when fresh data arrives
+  useEffect(() => {
+    if (data) {
+      setElapsedSec(0);
+    }
+  }, [data]);
+
+  // Tick elapsed counter every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedSec(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function handleForcePollGlobal() {
     setTriggering(true);
@@ -108,8 +124,8 @@ export default function OperationsSystemPage() {
         <div>
           <div className={styles.headerTitleGroup}>
             <h1>Operations & Engine Telemetry</h1>
-            <span className={styles.liveBadge}>
-              <span className={styles.pulseDot} /> LIVE (2s)
+            <span className={styles.liveBadge} title="SWR auto-fetches background telemetry every 2 seconds">
+              <span className={styles.pulseDot} /> LIVE • Polling 2s ({elapsedSec}s ago)
             </span>
           </div>
           <p className={styles.subtitle}>
