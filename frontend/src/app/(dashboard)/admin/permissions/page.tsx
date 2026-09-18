@@ -27,9 +27,19 @@ export default function AdminPermissionsPage() {
   const [newDesc, setNewDesc] = useState<string>('');
   const [createLoading, setCreateLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Filter permissions based on search term
+  const filteredPermissions = permissions.filter(
+    p =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.description.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   // Group permissions by category
-  const categories = Array.from(new Set(permissions.map(p => p.category)));
+  const categories = Array.from(new Set(filteredPermissions.map(p => p.category)));
 
   async function handleTogglePermission(role: RoleItem, permCode: string) {
     const isAssigned = role.permissions.includes(permCode);
@@ -37,9 +47,30 @@ export default function AdminPermissionsPage() {
       ? role.permissions.filter(c => c !== permCode)
       : [...role.permissions, permCode];
 
-    setSavingRoleId(role.id);
+    await saveRolePermissions(role.id, updatedPermissions);
+  }
+
+  async function handleBulkRoleToggle(role: RoleItem, enableAll: boolean) {
+    const allCodes = permissions.map(p => p.code);
+    const updatedPermissions = enableAll ? Array.from(new Set([...role.permissions, ...allCodes])) : [];
+    await saveRolePermissions(role.id, updatedPermissions);
+  }
+
+  async function handleBulkCategoryToggle(role: RoleItem, category: string, enable: boolean) {
+    const categoryCodes = permissions.filter(p => p.category === category).map(p => p.code);
+    let updatedPermissions: string[];
+    if (enable) {
+      updatedPermissions = Array.from(new Set([...role.permissions, ...categoryCodes]));
+    } else {
+      updatedPermissions = role.permissions.filter(c => !categoryCodes.includes(c));
+    }
+    await saveRolePermissions(role.id, updatedPermissions);
+  }
+
+  async function saveRolePermissions(roleId: string, updatedPermissions: string[]) {
+    setSavingRoleId(roleId);
     try {
-      await adminApi.updateRoleMatrix(role.id, updatedPermissions);
+      await adminApi.updateRoleMatrix(roleId, updatedPermissions);
       await mutateRoles();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to update matrix');
@@ -93,17 +124,27 @@ export default function AdminPermissionsPage() {
         <div>
           <h1 className={styles.title}>Dynamic Role & Permission Matrix</h1>
           <p className={styles.subtitle}>
-            Manage system roles, create custom user groups, and toggle permission matrix access live.
+            Granular itemized permission control. Assign specific feature actions across system & custom roles live.
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>+ Create Custom Role</Button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <Input
+            placeholder="🔍 Search permissions..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{ width: '220px', marginBottom: 0 }}
+          />
+          <Button onClick={() => setShowCreateModal(true)}>+ Create Custom Role</Button>
+        </div>
       </header>
 
       <Card className={styles.matrixCard}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th style={{ width: '320px' }}>Permission / Feature</th>
+              <th style={{ width: '340px' }}>
+                Permission / Feature ({permissions.length} total)
+              </th>
               {roles.map(r => (
                 <th key={r.id} className={styles.roleHeaderCell}>
                   <div className={styles.roleTitle}>
@@ -123,19 +164,56 @@ export default function AdminPermissionsPage() {
                     )}
                   </div>
                   <div className={styles.roleSlug}>{r.slug}</div>
+                  <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkRoleToggle(r, true)}
+                      style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(59,130,246,0.15)', color: 'var(--color-accent)', border: 'none', cursor: 'pointer' }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkRoleToggle(r, false)}
+                      style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(239,68,68,0.15)', color: 'var(--color-danger)', border: 'none', cursor: 'pointer' }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {categories.map(category => {
-              const categoryPerms = permissions.filter(p => p.category === category);
+              const categoryPerms = filteredPermissions.filter(p => p.category === category);
               return (
                 <React.Fragment key={category}>
                   <tr className={styles.categoryRow}>
-                    <td colSpan={roles.length + 1} className={styles.categoryTitle}>
-                      📂 {category}
+                    <td className={styles.categoryTitle}>
+                      📂 {category} ({categoryPerms.length})
                     </td>
+                    {roles.map(r => {
+                      const categoryCodes = categoryPerms.map(cp => cp.code);
+                      const allChecked = categoryCodes.every(code => r.permissions.includes(code));
+                      return (
+                        <td key={r.id} style={{ textAlign: 'center', background: 'rgba(99,102,241,0.04)' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleBulkCategoryToggle(r, category, !allChecked)}
+                            style={{
+                              fontSize: '10px', padding: '2px 8px', borderRadius: '4px',
+                              border: '1px solid var(--color-border)', cursor: 'pointer',
+                              background: allChecked ? 'rgba(16,185,129,0.15)' : 'var(--color-surface-2)',
+                              color: allChecked ? '#10B981' : 'var(--color-text-2)',
+                              fontWeight: 600
+                            }}
+                          >
+                            {allChecked ? '✓ All' : 'Toggle Category'}
+                          </button>
+                        </td>
+                      );
+                    })}
                   </tr>
                   {categoryPerms.map(perm => (
                     <tr key={perm.code}>
