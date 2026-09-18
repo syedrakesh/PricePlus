@@ -41,10 +41,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.modules.billing.seed_plans import seed_plans
     await seed_plans()
 
-    # Ensure schema migrations for tracked_products status column, discovery_runs raw_error, and users onboarding
-    from app.core.db import AsyncSessionLocal
+    # Ensure database tables and schema migrations exist
+    from app.core.db import Base, get_engine, AsyncSessionLocal
     from sqlalchemy import text
     try:
+        engine = get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
         async with AsyncSessionLocal() as db:
             await db.execute(text("ALTER TABLE tracked_products ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active' NOT NULL;"))
             await db.execute(text("ALTER TABLE discovery_runs ADD COLUMN IF NOT EXISTS raw_error TEXT;"))
@@ -55,6 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await db.commit()
     except Exception as exc:
         logger.warning("Failed to auto-migrate database columns: %s", exc)
+
 
     # Seed RBAC permissions and default roles on startup
     from app.core.db import AsyncSessionLocal

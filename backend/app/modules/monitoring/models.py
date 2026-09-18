@@ -172,3 +172,41 @@ class PriceChange(Base):
             f"<PriceChange tracked={self.tracked_product_id} "
             f"{self.old_price} → {self.new_price} ({self.change_type})>"
         )
+
+
+class WorkerTelemetryLog(Base):
+    """
+    Persisted log of engine and worker activity for historical auditing & debugging.
+    Appended on every item fetch, discovery run, and notification dispatch.
+    """
+
+    __tablename__ = "worker_telemetry_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+    action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    product_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    store_domain: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    price: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    status_code: Mapped[int] = mapped_column(nullable=False, default=200, index=True)
+    latency_ms: Mapped[int] = mapped_column(nullable=False, default=0)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<WorkerTelemetryLog action={self.action} domain={self.store_domain} status={self.status_code}>"
+

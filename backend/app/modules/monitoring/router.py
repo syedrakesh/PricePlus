@@ -118,16 +118,43 @@ async def get_worker_telemetry_endpoint(
     Return worker pool health, active tasks, and real-time live pull event stream.
     If user is superuser/admin: returns global telemetry across all platform items.
     If regular user: returns telemetry scoped to user's own items.
+    Persisted DB logs are used as fallback if ring buffer is empty (e.g. server restart).
     """
     user_id = uuid.UUID(user_id_str)
     from app.modules.auth.models import User
     from app.modules.monitoring.telemetry import worker_telemetry
+    from app.modules.monitoring.models import WorkerTelemetryLog
 
     user_res = await db.execute(select(User).where(User.id == user_id))
     user = user_res.scalar_one_or_none()
     is_admin = bool(user and getattr(user, "is_superuser", False))
 
     events = worker_telemetry.get_events(user_id=user_id_str, is_admin=is_admin, limit=50)
+
+    # Fallback to persistent DB logs if server recently restarted and ring buffer is empty
+    if len(events) < 5:
+        db_stmt = select(WorkerTelemetryLog)
+        if not is_admin:
+            db_stmt = db_stmt.where((WorkerTelemetryLog.user_id == user_id) | (WorkerTelemetryLog.user_id.is_(None)))
+        db_stmt = db_stmt.order_by(WorkerTelemetryLog.timestamp.desc()).limit(50)
+        db_res = await db.execute(db_stmt)
+        db_logs = list(db_res.scalars().all())
+        if db_logs:
+            events = [
+                {
+                    "id": str(log.id),
+                    "timestamp": log.timestamp.isoformat(),
+                    "action": log.action,
+                    "product_title": log.product_title or "Unknown Product",
+                    "store_domain": log.store_domain or "General",
+                    "price": log.price,
+                    "status_code": log.status_code,
+                    "latency_ms": log.latency_ms,
+                    "details": log.details or "",
+                }
+                for log in db_logs
+            ]
+
     workers = worker_telemetry.get_worker_pool_status(
         is_running=monitoring_engine.is_running,
         total_cycles=monitoring_engine.total_cycles_run,
@@ -146,6 +173,75 @@ async def get_worker_telemetry_endpoint(
     }
 
 
+@router.get("/monitoring/telemetry/history")
+async def get_historical_telemetry_logs(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    action: str | None = Query(default=None),
+    only_errors: bool = Query(default=False),
+    search: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+):
+    """
+    Query persistent telemetry logs from database with filtering by timestamp, action, and errors.
+    Admins can view global historical logs; regular users view their own events.
+    """
+    user_id = uuid.UUID(user_id_str)
+    from app.modules.auth.models import User
+    from app.modules.monitoring.models import WorkerTelemetryLog
+
+    user_res = await db.execute(select(User).where(User.id == user_id))
+    user = user_res.scalar_one_or_none()
+    is_admin = bool(user and getattr(user, "is_superuser", False))
+
+    stmt = select(WorkerTelemetryLog)
+    if not is_admin:
+        stmt = stmt.where((WorkerTelemetryLog.user_id == user_id) | (WorkerTelemetryLog.user_id.is_(None)))
+
+    if action:
+        stmt = stmt.where(WorkerTelemetryLog.action == action)
+
+    if only_errors:
+        stmt = stmt.where((WorkerTelemetryLog.status_code >= 400) | (WorkerTelemetryLog.action == "ERROR"))
+
+    if search:
+        pattern = f"%{search.strip()}%"
+        stmt = stmt.where(
+            (WorkerTelemetryLog.product_title.ilike(pattern))
+            | (WorkerTelemetryLog.store_domain.ilike(pattern))
+            | (WorkerTelemetryLog.details.ilike(pattern))
+        )
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_count = (await db.execute(count_stmt)).scalar_one()
+
+    offset = (page - 1) * page_size
+    stmt = stmt.order_by(WorkerTelemetryLog.timestamp.desc()).offset(offset).limit(page_size)
+    res = await db.execute(stmt)
+    logs = list(res.scalars().all())
+
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "logs": [
+            {
+                "id": str(log.id),
+                "timestamp": log.timestamp.isoformat(),
+                "action": log.action,
+                "product_title": log.product_title,
+                "store_domain": log.store_domain,
+                "price": log.price,
+                "status_code": log.status_code,
+                "latency_ms": log.latency_ms,
+                "details": log.details,
+            }
+            for log in logs
+        ],
+    }
+
+
 @router.post("/monitoring/trigger-user-checks")
 async def trigger_user_product_checks(
     db: AsyncSession = Depends(get_db),
@@ -157,6 +253,7 @@ async def trigger_user_product_checks(
         "message": "Immediate check triggered for your products",
         "result": res,
     }
+
 
 
 

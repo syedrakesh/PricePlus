@@ -9,7 +9,39 @@ import logging
 import threading
 from typing import Any
 
+import asyncio
+import uuid
+from app.core.db import AsyncSessionLocal
+from app.modules.monitoring.models import WorkerTelemetryLog
+
 logger = logging.getLogger(__name__)
+
+
+async def _persist_event_to_db(event: dict[str, Any]) -> None:
+    """Helper task to asynchronously persist a telemetry log into the database."""
+    try:
+        async with AsyncSessionLocal() as db:
+            user_uuid = None
+            if event.get("user_id"):
+                try:
+                    user_uuid = uuid.UUID(event["user_id"])
+                except (ValueError, TypeError):
+                    user_uuid = None
+
+            log_entry = WorkerTelemetryLog(
+                action=event.get("action", "UNKNOWN"),
+                product_title=event.get("product_title"),
+                store_domain=event.get("store_domain"),
+                price=event.get("price"),
+                status_code=event.get("status_code", 200),
+                latency_ms=event.get("latency_ms", 0),
+                user_id=user_uuid,
+                details=event.get("details"),
+            )
+            db.add(log_entry)
+            await db.commit()
+    except Exception as exc:
+        logger.warning("Failed to persist telemetry log to database: %s", exc)
 
 
 class WorkerTelemetryService:
@@ -30,7 +62,7 @@ class WorkerTelemetryService:
         user_id: str | None = None,
         details: str | None = None,
     ) -> dict[str, Any]:
-        """Record a live worker action into the telemetry ring buffer."""
+        """Record a live worker action into the telemetry ring buffer and DB log table."""
         event = {
             "id": f"evt_{datetime.now(UTC).timestamp()}_{len(self._events_buffer)}",
             "timestamp": datetime.now(UTC).isoformat(),
@@ -45,7 +77,16 @@ class WorkerTelemetryService:
         }
         with self._lock:
             self._events_buffer.appendleft(event)
+
+        # Async background insert to database
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_persist_event_to_db(event))
+        except RuntimeError:
+            pass
+
         return event
+
 
     def get_events(
         self,
