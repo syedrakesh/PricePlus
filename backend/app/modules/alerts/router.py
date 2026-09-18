@@ -27,6 +27,7 @@ from app.modules.alerts.schemas import (
     AlertRuleListResponse,
     AlertRuleResponse,
     CreateAlertRuleRequest,
+    TestNotificationRequest,
 )
 from app.modules.tracking.models import TrackedProduct
 
@@ -257,3 +258,20 @@ async def unread_alert_count(
         )
     )
     return {"unread_count": result.scalar_one()}
+
+
+@router.post("/alerts/test-notification")
+async def test_notification_endpoint(
+    data: TestNotificationRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+) -> dict:
+    """Trigger a test notification for the authenticated user (email or telegram)."""
+    user_id = uuid.UUID(user_id_str)
+    from app.modules.alerts.dispatcher import send_test_notification
+
+    success, msg = await send_test_notification(user_id, data.channel.lower().strip(), db)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": msg}
+

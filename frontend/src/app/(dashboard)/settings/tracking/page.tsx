@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import useSWR from 'swr';
 import { settingsApi } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -113,9 +114,16 @@ export default function TrackingSettingsPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <h1>⚡ Product Tracking Speed Controls</h1>
-        <p>Control background product tracking polling concurrency and randomized min/max request delays.</p>
+      <div className={styles.tabsNav}>
+        <Link href="/settings/discovery" className={styles.tabBtn}>
+          🔍 Discovery Speed
+        </Link>
+        <Link href="/settings/tracking" className={`${styles.tabBtn} ${styles.tabBtnActive}`}>
+          ⚡ Tracking Speed
+        </Link>
+        <Link href="/settings/notifications" className={styles.tabBtn}>
+          🔔 Notifications & Channels
+        </Link>
       </div>
 
       <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

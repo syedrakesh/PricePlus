@@ -123,6 +123,13 @@ class User(Base):
         nullable=False,
     )
 
+    # Notification Channel Settings
+    notification_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    telegram_bot_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    telegram_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     role = relationship("Role", lazy="selectin")
 
     created_at: Mapped[datetime] = mapped_column(

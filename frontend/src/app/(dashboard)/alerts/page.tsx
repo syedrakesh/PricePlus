@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
+import Link from 'next/link';
 import { alertsApi, trackingApi, TrackedProduct } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
@@ -42,6 +43,7 @@ export default function AlertsPage() {
   const [thresholdPct, setThresholdPct] = useState('5');
   const [thresholdPrice, setThresholdPrice] = useState('');
   const [channel, setChannel] = useState('email');
+  const [webhookUrl, setWebhookUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -61,6 +63,7 @@ export default function AlertsPage() {
         threshold_pct: thresholdPct ? parseFloat(thresholdPct) : null,
         threshold_price: thresholdPrice ? parseFloat(thresholdPrice) : null,
         channel: channel,
+        webhook_url: channel === 'webhook' ? webhookUrl : null,
       });
       setShowModal(false);
       setSelectedTrackedId('');
@@ -80,7 +83,12 @@ export default function AlertsPage() {
           <h1>Alerts</h1>
           <p>Your alert rules and notification history</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>+ Create Alert Rule</Button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <Link href="/settings/notifications">
+            <Button variant="secondary">⚙️ Notification Channels</Button>
+          </Link>
+          <Button onClick={() => setShowModal(true)}>+ Create Alert Rule</Button>
+        </div>
       </div>
 
       {/* Alert Rules */}
@@ -292,6 +300,43 @@ export default function AlertsPage() {
                     value={thresholdPrice}
                     onChange={e => setThresholdPrice(e.target.value)}
                     placeholder="e.g. 49.99"
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text)', fontSize: '14px'
+                    }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '4px' }}>
+                  Notification Channel
+                </label>
+                <select
+                  value={channel}
+                  onChange={e => setChannel(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text)', fontSize: '14px'
+                  }}
+                >
+                  <option value="email">📧 Email Notification</option>
+                  <option value="telegram">✈️ Telegram Notification</option>
+                  <option value="webhook">🔗 Custom Webhook</option>
+                </select>
+              </div>
+
+              {channel === 'webhook' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '4px' }}>
+                    Webhook URL
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={webhookUrl}
+                    onChange={e => setWebhookUrl(e.target.value)}
+                    placeholder="https://api.yourdomain.com/webhooks/price-drop"
                     style={{
                       width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--color-border)', background: 'var(--color-surface-2)', color: 'var(--color-text)', fontSize: '14px'

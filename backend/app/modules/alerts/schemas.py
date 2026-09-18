@@ -14,7 +14,7 @@ VALID_CONDITION_TYPES = {
     "back_in_stock",
 }
 
-VALID_CHANNELS = {"email", "webhook"}
+VALID_CHANNELS = {"email", "telegram", "webhook"}
 
 
 class CreateAlertRuleRequest(BaseModel):
@@ -132,3 +132,8 @@ class AlertRuleListResponse(BaseModel):
 class AlertListResponse(BaseModel):
     alerts: list[AlertResponse]
     total: int
+
+
+class TestNotificationRequest(BaseModel):
+    channel: str = Field(description="email or telegram")
+

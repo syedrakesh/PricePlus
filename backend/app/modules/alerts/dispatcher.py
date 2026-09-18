@@ -130,7 +130,7 @@ async def _process_one_change(
         await db.flush()  # Get alert.id before dispatch
 
         # Dispatch the notification
-        delivered, error = await _dispatch_notification(rule, alert, summary)
+        delivered, error = await _dispatch_notification(rule, alert, summary, db)
         alert.delivered = delivered
         alert.delivery_error = error
         if delivered:
@@ -159,6 +159,7 @@ async def _dispatch_notification(
     rule: AlertRule,
     alert: Alert,
     summary: str,
+    db: AsyncSession,
 ) -> tuple[bool, str | None]:
     """
     Send the notification via the configured channel.
@@ -166,6 +167,9 @@ async def _dispatch_notification(
     """
     if rule.channel == "email":
         return await _send_email_alert(rule, alert, summary)
+
+    if rule.channel == "telegram":
+        return await _send_telegram_alert(rule, alert, summary, db)
 
     if rule.channel == "webhook":
         return await _send_webhook_alert(rule, summary)
@@ -201,6 +205,52 @@ async def _send_email_alert(
         return False, str(exc)
 
 
+async def _send_telegram_alert(
+    rule: AlertRule,
+    alert: Alert,
+    summary: str,
+    db: AsyncSession,
+) -> tuple[bool, str | None]:
+    """Send a notification to the user's Telegram Chat ID via Telegram Bot API."""
+    try:
+        from app.core.config import get_settings
+        from app.modules.auth.models import User
+
+        user_res = await db.execute(select(User).where(User.id == rule.user_id))
+        user = user_res.scalar_one_or_none()
+        if not user:
+            return False, "User not found"
+
+        if not getattr(user, "telegram_alerts_enabled", True):
+            return False, "Telegram alerts disabled in user settings"
+
+        chat_id = getattr(user, "telegram_chat_id", None)
+        if not chat_id:
+            return False, "Telegram chat_id is not configured in user profile settings"
+
+        settings = get_settings()
+        bot_token = getattr(user, "telegram_bot_token", None) or getattr(settings, "telegram_bot_token", None)
+        if not bot_token:
+            return False, "Telegram bot_token is not configured"
+
+        import httpx
+
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        text_message = f"🔔 *PricePlus Alert*\n\n{summary}"
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(url, json={"chat_id": chat_id, "text": text_message, "parse_mode": "Markdown"})
+            if resp.status_code >= 400:
+                err_body = resp.text[:200]
+                logger.warning("Telegram Bot API returned HTTP %s: %s", resp.status_code, err_body)
+                return False, f"Telegram API HTTP {resp.status_code}: {err_body}"
+            return True, None
+
+    except Exception as exc:
+        logger.warning("Failed to send Telegram alert: %s", exc)
+        return False, str(exc)
+
+
 async def _send_webhook_alert(
     rule: AlertRule,
     summary: str,
@@ -224,3 +274,69 @@ async def _send_webhook_alert(
             return True, None
     except Exception as exc:
         return False, str(exc)
+
+
+async def send_test_notification(
+    user_id: uuid.UUID,
+    channel: str,
+    db: AsyncSession,
+) -> tuple[bool, str]:
+    """Send a test notification message for the requested channel (email or telegram)."""
+    from app.core.config import get_settings
+    from app.modules.auth.models import User
+
+    user_res = await db.execute(select(User).where(User.id == user_id))
+    user = user_res.scalar_one_or_none()
+    if not user:
+        return False, "User account not found."
+
+    summary = "🎉 Test Notification from PricePlus! Your notification channel is working correctly."
+
+    if channel == "telegram":
+        chat_id = getattr(user, "telegram_chat_id", None)
+        if not chat_id:
+            return False, "Please enter your Telegram Chat ID in settings first."
+
+        settings = get_settings()
+        bot_token = getattr(user, "telegram_bot_token", None) or getattr(settings, "telegram_bot_token", None)
+        if not bot_token:
+            return False, "Please configure your Telegram Bot Token in settings."
+
+        import httpx
+
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    url,
+                    json={
+                        "chat_id": chat_id,
+                        "text": f"🚀 *PricePlus Test Notification*\n\n{summary}",
+                        "parse_mode": "Markdown",
+                    },
+                )
+                if resp.status_code >= 400:
+                    return False, f"Telegram API error (HTTP {resp.status_code}): {resp.text[:150]}"
+                return True, f"Test Telegram message sent successfully to Chat ID {chat_id}!"
+        except Exception as exc:
+            return False, f"Failed to send Telegram message: {exc}"
+
+    if channel == "email":
+        target_email = getattr(user, "notification_email", None) or user.email
+        settings = get_settings()
+        if not settings.smtp_username:
+            return True, f"Simulated test email sent successfully to {target_email} (SMTP not configured in local environment)."
+
+        from app.modules.alerts.email_sender import send_alert_email
+
+        try:
+            await send_alert_email(
+                to_user_id=str(user.id),
+                subject="PricePlus Test Notification",
+                body=summary,
+            )
+            return True, f"Test email notification sent successfully to {target_email}!"
+        except Exception as exc:
+            return False, f"Failed to send email alert: {exc}"
+
+    return False, f"Unsupported test channel: {channel!r}"

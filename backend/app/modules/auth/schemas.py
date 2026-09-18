@@ -65,6 +65,11 @@ class UserResponse(BaseModel):
     email: str
     full_name: str | None = None
     phone_number: str | None = None
+    notification_email: str | None = None
+    telegram_chat_id: str | None = None
+    telegram_bot_token: str | None = None
+    email_alerts_enabled: bool = True
+    telegram_alerts_enabled: bool = True
     is_active: bool
     is_superuser: bool = False
     is_verified: bool = True
@@ -83,6 +88,11 @@ class AdminUserResponse(BaseModel):
     email: str
     full_name: str | None = None
     phone_number: str | None = None
+    notification_email: str | None = None
+    telegram_chat_id: str | None = None
+    telegram_bot_token: str | None = None
+    email_alerts_enabled: bool = True
+    telegram_alerts_enabled: bool = True
     is_active: bool
     is_superuser: bool
     role_slug: str | None = "user"
@@ -102,6 +112,11 @@ class UpdateProfileRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=150)
     email: EmailStr | None = None
     phone_number: str | None = Field(default=None, max_length=50)
+    notification_email: EmailStr | str | None = Field(default=None, max_length=254)
+    telegram_chat_id: str | None = Field(default=None, max_length=100)
+    telegram_bot_token: str | None = Field(default=None, max_length=255)
+    email_alerts_enabled: bool | None = None
+    telegram_alerts_enabled: bool | None = None
 
     @field_validator("email")
     @classmethod

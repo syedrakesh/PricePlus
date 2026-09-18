@@ -108,6 +108,11 @@ async def me(
         email=user.email,
         full_name=user.full_name,
         phone_number=user.phone_number,
+        notification_email=getattr(user, "notification_email", None),
+        telegram_chat_id=getattr(user, "telegram_chat_id", None),
+        telegram_bot_token=getattr(user, "telegram_bot_token", None),
+        email_alerts_enabled=getattr(user, "email_alerts_enabled", True),
+        telegram_alerts_enabled=getattr(user, "telegram_alerts_enabled", True),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         is_verified=getattr(user, "is_verified", True),
@@ -137,7 +142,7 @@ async def update_me(
     user: User = Depends(get_current_active_user),
 ) -> UserResponse:
     """
-    Update the authenticated user's profile details (full_name, email, phone_number).
+    Update the authenticated user's profile details & notification preferences.
     """
     if data.email and data.email.lower() != user.email.lower():
         existing_res = await db.execute(select(User).where(User.email == data.email.lower()))
@@ -151,6 +156,21 @@ async def update_me(
     if data.phone_number is not None:
         user.phone_number = data.phone_number.strip() if data.phone_number else None
 
+    if data.notification_email is not None:
+        user.notification_email = data.notification_email.strip() if data.notification_email else None
+
+    if data.telegram_chat_id is not None:
+        user.telegram_chat_id = data.telegram_chat_id.strip() if data.telegram_chat_id else None
+
+    if data.telegram_bot_token is not None:
+        user.telegram_bot_token = data.telegram_bot_token.strip() if data.telegram_bot_token else None
+
+    if data.email_alerts_enabled is not None:
+        user.email_alerts_enabled = data.email_alerts_enabled
+
+    if data.telegram_alerts_enabled is not None:
+        user.telegram_alerts_enabled = data.telegram_alerts_enabled
+
     await db.commit()
     await db.refresh(user)
 
@@ -163,6 +183,11 @@ async def update_me(
         email=user.email,
         full_name=user.full_name,
         phone_number=user.phone_number,
+        notification_email=getattr(user, "notification_email", None),
+        telegram_chat_id=getattr(user, "telegram_chat_id", None),
+        telegram_bot_token=getattr(user, "telegram_bot_token", None),
+        email_alerts_enabled=getattr(user, "email_alerts_enabled", True),
+        telegram_alerts_enabled=getattr(user, "telegram_alerts_enabled", True),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         role_slug=role_slug,

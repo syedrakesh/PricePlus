@@ -66,6 +66,11 @@ export interface User {
   email: string;
   full_name: string | null;
   phone_number: string | null;
+  notification_email?: string | null;
+  telegram_chat_id?: string | null;
+  telegram_bot_token?: string | null;
+  email_alerts_enabled?: boolean;
+  telegram_alerts_enabled?: boolean;
   is_active: boolean;
   is_superuser: boolean;
   is_verified?: boolean;
@@ -83,8 +88,16 @@ export const authApi = {
     request<AuthTokens>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   me: () => request<User>('/auth/me'),
   completeOnboarding: () => request<{ message: string; onboarding_completed: boolean }>('/auth/complete-onboarding', { method: 'POST' }),
-  updateProfile: (data: { full_name?: string | null; email?: string; phone_number?: string | null }) =>
-    request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  updateProfile: (data: {
+    full_name?: string | null;
+    email?: string;
+    phone_number?: string | null;
+    notification_email?: string | null;
+    telegram_chat_id?: string | null;
+    telegram_bot_token?: string | null;
+    email_alerts_enabled?: boolean;
+    telegram_alerts_enabled?: boolean;
+  }) => request<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
   changePassword: (current_password: string, new_password: string) =>
     request<{ message: string }>('/auth/change-password', {
       method: 'POST',
@@ -244,7 +257,7 @@ export interface PriceChange {
 export interface AlertRule {
   id: string; tracked_product_id: string | null; condition_type: string;
   threshold_pct: number | null; threshold_price: number | null;
-  channel: string; is_enabled: boolean; cool_down_minutes: number;
+  channel: string; webhook_url?: string | null; is_enabled: boolean; cool_down_minutes: number;
   last_triggered_at: string | null; created_at: string;
 }
 
@@ -262,6 +275,11 @@ export const alertsApi = {
   toggleRule: (id: string) => request<AlertRule>(`/alert-rules/${id}/toggle`, { method: 'PATCH' }),
   listAlerts: (page = 1) => request<{ alerts: Alert[]; total: number }>(`/alerts?page=${page}`),
   unreadCount: () => request<{ unread_count: number }>('/alerts/unread-count'),
+  sendTestNotification: (channel: 'email' | 'telegram') =>
+    request<{ success: boolean; message: string }>('/alerts/test-notification', {
+      method: 'POST',
+      body: JSON.stringify({ channel }),
+    }),
 };
 
 // ─── Billing & Subscriptions ─────────────────────────────────────────────────
