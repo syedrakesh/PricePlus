@@ -28,6 +28,7 @@ from app.modules.alerts.schemas import (
     AlertRuleResponse,
     CreateAlertRuleRequest,
     TestNotificationRequest,
+    UpdateAlertRuleRequest,
 )
 from app.modules.tracking.models import TrackedProduct
 
@@ -208,6 +209,63 @@ async def toggle_alert_rule(
     await db.commit()
     await db.refresh(rule)
     return AlertRuleResponse.from_orm_model(rule)
+
+
+@router.patch("/alert-rules/{rule_id}", response_model=AlertRuleResponse)
+async def update_alert_rule(
+    rule_id: str,
+    data: UpdateAlertRuleRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+) -> AlertRuleResponse:
+    """Update an existing alert rule for the authenticated user."""
+    user_id = uuid.UUID(user_id_str)
+    try:
+        rule_uuid = uuid.UUID(rule_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Alert rule not found") from None
+
+    result = await db.execute(
+        select(AlertRule).where(
+            AlertRule.id == rule_uuid,
+            AlertRule.user_id == user_id,
+        )
+    )
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Alert rule not found")
+
+    update_data = data.model_dump(exclude_unset=True)
+
+    if "tracked_product_id" in update_data:
+        val = update_data.pop("tracked_product_id")
+        if val:
+            try:
+                t_uuid = uuid.UUID(val)
+                await _get_owned_tracked(t_uuid, user_id, db)
+                rule.tracked_product_id = t_uuid
+            except ValueError:
+                raise HTTPException(status_code=404, detail="Tracked product not found") from None
+        else:
+            rule.tracked_product_id = None
+
+    for key, val in update_data.items():
+        setattr(rule, key, val)
+
+    # Post-update validation check
+    pct_conditions = {"price_drop_pct", "price_increase_pct"}
+    price_conditions = {"price_below", "price_above"}
+    if rule.condition_type in pct_conditions and rule.threshold_pct is None:
+        raise HTTPException(status_code=400, detail=f"threshold_pct is required for condition_type={rule.condition_type!r}")
+    if rule.condition_type in price_conditions and rule.threshold_price is None:
+        raise HTTPException(status_code=400, detail=f"threshold_price is required for condition_type={rule.condition_type!r}")
+    if rule.channel == "webhook" and not rule.webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required when channel='webhook'")
+
+    await db.commit()
+    await db.refresh(rule)
+    return AlertRuleResponse.from_orm_model(rule)
+
 
 
 @router.get("/alerts", response_model=AlertListResponse)

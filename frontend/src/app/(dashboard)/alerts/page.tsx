@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { alertsApi, trackingApi, TrackedProduct } from '@/lib/api';
+import { alertsApi, trackingApi, TrackedProduct, AlertRule } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -37,6 +37,7 @@ export default function AlertsPage() {
 
   const { data: trackedData } = useSWR('tracked-products', () => trackingApi.list());
   const [showModal, setShowModal] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [ruleScope, setRuleScope] = useState<'universal' | 'product'>('universal');
   const [selectedTrackedId, setSelectedTrackedId] = useState('');
   const [conditionType, setConditionType] = useState('price_drop_pct');
@@ -47,7 +48,33 @@ export default function AlertsPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
-  async function handleCreateRule(e: React.FormEvent) {
+  function openCreateModal() {
+    setEditingRuleId(null);
+    setRuleScope('universal');
+    setSelectedTrackedId('');
+    setConditionType('price_drop_pct');
+    setThresholdPct('5');
+    setThresholdPrice('');
+    setChannel('email');
+    setWebhookUrl('');
+    setCreateError('');
+    setShowModal(true);
+  }
+
+  function openEditModal(rule: AlertRule) {
+    setEditingRuleId(rule.id);
+    setRuleScope(rule.tracked_product_id ? 'product' : 'universal');
+    setSelectedTrackedId(rule.tracked_product_id || '');
+    setConditionType(rule.condition_type || 'price_drop_pct');
+    setThresholdPct(rule.threshold_pct !== null && rule.threshold_pct !== undefined ? String(rule.threshold_pct) : '');
+    setThresholdPrice(rule.threshold_price !== null && rule.threshold_price !== undefined ? String(rule.threshold_price) : '');
+    setChannel(rule.channel || 'email');
+    setWebhookUrl(rule.webhook_url || '');
+    setCreateError('');
+    setShowModal(true);
+  }
+
+  async function handleSaveRule(e: React.FormEvent) {
     e.preventDefault();
     if (ruleScope === 'product' && !selectedTrackedId) {
       setCreateError('Please select a tracked product');
@@ -57,20 +84,25 @@ export default function AlertsPage() {
     setCreateError('');
     setCreating(true);
     try {
-      await alertsApi.createRule({
+      const payload = {
         tracked_product_id: ruleScope === 'universal' ? null : selectedTrackedId,
         condition_type: conditionType,
-        threshold_pct: thresholdPct ? parseFloat(thresholdPct) : null,
-        threshold_price: thresholdPrice ? parseFloat(thresholdPrice) : null,
+        threshold_pct: conditionType.includes('pct') && thresholdPct ? parseFloat(thresholdPct) : null,
+        threshold_price: (conditionType === 'price_below' || conditionType === 'price_above') && thresholdPrice ? parseFloat(thresholdPrice) : null,
         channel: channel,
         webhook_url: channel === 'webhook' ? webhookUrl : null,
-      });
+      };
+
+      if (editingRuleId) {
+        await alertsApi.updateRule(editingRuleId, payload);
+      } else {
+        await alertsApi.createRule(payload);
+      }
       setShowModal(false);
-      setSelectedTrackedId('');
-      setRuleScope('universal');
+      setEditingRuleId(null);
       mutateRules();
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create alert rule');
+      setCreateError(err instanceof Error ? err.message : 'Failed to save alert rule');
     } finally {
       setCreating(false);
     }
@@ -87,7 +119,7 @@ export default function AlertsPage() {
           <Link href="/settings/notifications">
             <Button variant="secondary">⚙️ Notification Channels</Button>
           </Link>
-          <Button onClick={() => setShowModal(true)}>+ Create Alert Rule</Button>
+          <Button onClick={openCreateModal}>+ Create Alert Rule</Button>
         </div>
       </div>
 
@@ -135,6 +167,13 @@ export default function AlertsPage() {
                   )}
                 </div>
                 <div className={styles.ruleActions}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openEditModal(rule)}
+                  >
+                    Edit ✏️
+                  </Button>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -190,10 +229,10 @@ export default function AlertsPage() {
             padding: '24px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow-xl)'
           }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--color-text)' }}>
-              Create New Alert Rule
+              {editingRuleId ? 'Edit Alert Rule' : 'Create New Alert Rule'}
             </h3>
 
-            <form onSubmit={handleCreateRule} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={handleSaveRule} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--color-text-2)', marginBottom: '6px' }}>
                   Rule Scope
@@ -356,7 +395,7 @@ export default function AlertsPage() {
                   Cancel
                 </Button>
                 <Button type="submit" loading={creating}>
-                  Create Rule
+                  {editingRuleId ? 'Save Changes' : 'Create Rule'}
                 </Button>
               </div>
             </form>

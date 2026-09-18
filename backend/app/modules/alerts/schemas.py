@@ -57,7 +57,32 @@ class CreateAlertRuleRequest(BaseModel):
         if self.condition_type in price_conditions and self.threshold_price is None:
             raise ValueError(f"threshold_price is required for condition_type={self.condition_type!r}")
         if self.channel == "webhook" and not self.webhook_url:
-            raise ValueError("webhook_url is required when channel=webhook")
+            raise ValueError("webhook_url is required when channel='webhook'")
+
+
+class UpdateAlertRuleRequest(BaseModel):
+    tracked_product_id: str | None = None
+    condition_type: str | None = None
+    threshold_pct: float | None = Field(default=None, ge=0.01, le=100.0)
+    threshold_price: float | None = Field(default=None, ge=0.0)
+    channel: str | None = None
+    webhook_url: str | None = Field(default=None, max_length=2048)
+    cool_down_minutes: int | None = Field(default=None, ge=5, le=10080)
+    is_enabled: bool | None = None
+
+    @field_validator("condition_type")
+    @classmethod
+    def validate_condition_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_CONDITION_TYPES:
+            raise ValueError(f"condition_type must be one of: {', '.join(sorted(VALID_CONDITION_TYPES))}")
+        return v
+
+    @field_validator("channel")
+    @classmethod
+    def validate_channel(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_CHANNELS:
+            raise ValueError(f"channel must be one of: {', '.join(VALID_CHANNELS)}")
+        return v
 
 
 class AlertRuleResponse(BaseModel):

@@ -206,7 +206,7 @@ export default function NotificationSettingsPage() {
                   }}
                 />
                 <p style={{ fontSize: '12px', color: 'var(--color-text-3)', marginTop: '4px' }}>
-                  Enter one or multiple Chat IDs / Channels separated by commas. Start a chat with <strong><a href="https://t.me/userinfobot">@userinfobot</a></strong> on Telegram to find your Chat ID.
+                  Enter one or multiple Chat IDs / Channels separated by commas. Start a chat with <strong><a href="https://t.me/userinfobot" target='_blank'>@userinfobot</a></strong> on Telegram to find your Chat ID.
                 </p>
               </div>
 

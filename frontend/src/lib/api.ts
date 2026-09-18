@@ -271,6 +271,8 @@ export const alertsApi = {
   listRules: () => request<{ rules: AlertRule[]; total: number }>('/alert-rules'),
   createRule: (data: Partial<AlertRule> & { tracked_product_id?: string | null; condition_type: string }) =>
     request<AlertRule>('/alert-rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateRule: (id: string, data: Partial<AlertRule>) =>
+    request<AlertRule>(`/alert-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteRule: (id: string) => request<void>(`/alert-rules/${id}`, { method: 'DELETE' }),
   toggleRule: (id: string) => request<AlertRule>(`/alert-rules/${id}/toggle`, { method: 'PATCH' }),
   listAlerts: (page = 1) => request<{ alerts: Alert[]; total: number }>(`/alerts?page=${page}`),
