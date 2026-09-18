@@ -15,29 +15,31 @@ export default function OperationsSystemPage() {
   const [actionMsg, setActionMsg] = useState('');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [elapsedSec, setElapsedSec] = useState<number>(0);
+  const [lastFetchTime, setLastFetchTime] = useState<number>(Date.now());
+  const [now, setNow] = useState<number>(Date.now());
 
   // Poll telemetry endpoint every 2000ms for live real-time stream
-  const { data, isLoading, mutate } = useSWR(
+  const { data, isLoading, error, mutate } = useSWR(
     'worker-telemetry',
     () => monitoringApi.getWorkerTelemetry(),
-    { refreshInterval: 2000 }
+    {
+      refreshInterval: 2000,
+      refreshWhenHidden: true,
+      onSuccess: () => {
+        setLastFetchTime(Date.now());
+      },
+    }
   );
 
-  // Reset elapsed counter when fresh data arrives
-  useEffect(() => {
-    if (data) {
-      setElapsedSec(0);
-    }
-  }, [data]);
-
-  // Tick elapsed counter every second
+  // Tick clock every second for exact elapsed time calculation
   useEffect(() => {
     const timer = setInterval(() => {
-      setElapsedSec(prev => prev + 1);
+      setNow(Date.now());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const elapsedSec = Math.max(0, Math.floor((now - lastFetchTime) / 1000));
 
   async function handleForcePollGlobal() {
     setTriggering(true);
@@ -45,6 +47,7 @@ export default function OperationsSystemPage() {
     try {
       const res = await monitoringApi.triggerPollNow();
       setActionMsg(`⚡ Global poll complete! ${res.result?.polled ?? 0} items polled.`);
+      setLastFetchTime(Date.now());
       mutate();
     } catch (err: unknown) {
       setActionMsg(err instanceof Error ? `⚠️ ${err.message}` : 'Failed to trigger poll');
@@ -60,6 +63,7 @@ export default function OperationsSystemPage() {
     try {
       await monitoringApi.restartEngine();
       setActionMsg('🔄 Workers restarted successfully.');
+      setLastFetchTime(Date.now());
       mutate();
     } catch (err: unknown) {
       setActionMsg(err instanceof Error ? `⚠️ ${err.message}` : 'Failed to restart engine');
@@ -74,6 +78,7 @@ export default function OperationsSystemPage() {
     try {
       const res = await monitoringApi.triggerUserChecks();
       setActionMsg(`⚡ Immediate check completed for your items (${res.result?.polled ?? 0} polled).`);
+      setLastFetchTime(Date.now());
       mutate();
     } catch (err: unknown) {
       setActionMsg(err instanceof Error ? `⚠️ ${err.message}` : 'Failed to trigger user check');
@@ -124,9 +129,19 @@ export default function OperationsSystemPage() {
         <div>
           <div className={styles.headerTitleGroup}>
             <h1>Operations & Engine Telemetry</h1>
-            <span className={styles.liveBadge} title="SWR auto-fetches background telemetry every 2 seconds">
-              <span className={styles.pulseDot} /> LIVE • Polling 2s ({elapsedSec}s ago)
-            </span>
+            {error ? (
+              <span className={styles.liveBadge} style={{ background: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--color-danger)' }}>
+                <span className={styles.pulseDot} style={{ backgroundColor: 'var(--color-danger)', boxShadow: '0 0 8px var(--color-danger)' }} /> PAUSED (Error)
+              </span>
+            ) : elapsedSec > 4 ? (
+              <span className={styles.liveBadge} style={{ background: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)', color: 'var(--color-warning)' }}>
+                <span className={styles.pulseDot} style={{ backgroundColor: 'var(--color-warning)', boxShadow: '0 0 8px var(--color-warning)' }} /> SYNCING ({elapsedSec}s ago)
+              </span>
+            ) : (
+              <span className={styles.liveBadge} title="SWR auto-fetches background telemetry every 2 seconds">
+                <span className={styles.pulseDot} /> LIVE • Polling 2s ({elapsedSec}s ago)
+              </span>
+            )}
           </div>
           <p className={styles.subtitle}>
             {data?.is_admin
