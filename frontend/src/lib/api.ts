@@ -233,6 +233,40 @@ export interface MonitoringEngineStatus {
   user_tracked_count?: number;
 }
 
+export interface LivePullEvent {
+  id: string;
+  timestamp: string;
+  action: 'PULLED' | 'DISCOVERED' | 'DISPATCHED' | 'ERROR' | string;
+  product_title: string;
+  store_domain: string;
+  price: number | null;
+  status_code: number;
+  latency_ms: number;
+  user_id: string | null;
+  details: string;
+}
+
+export interface WorkerInfo {
+  name: string;
+  role: string;
+  status: string;
+  current_task: string;
+  throughput_cycles?: number;
+  concurrency?: string;
+}
+
+export interface WorkerTelemetryData {
+  is_admin: boolean;
+  engine_status: string;
+  is_running: boolean;
+  workers: WorkerInfo[];
+  live_pulls: LivePullEvent[];
+  total_cycles_run: number;
+  last_polled_count: number;
+  last_changes_count: number;
+  last_error_count: number;
+}
+
 export const monitoringApi = {
   timeline: (trackedId: string, limit = 100) =>
     request<TimelineResponse>(`/tracked/${trackedId}/timeline?limit=${limit}`),
@@ -244,6 +278,10 @@ export const monitoringApi = {
     request<{ message: string; result: any; engine: MonitoringEngineStatus }>('/monitoring/engine/trigger', { method: 'POST' }),
   restartEngine: () =>
     request<{ message: string; engine: MonitoringEngineStatus }>('/monitoring/engine/restart', { method: 'POST' }),
+  getWorkerTelemetry: () =>
+    request<WorkerTelemetryData>('/monitoring/worker/telemetry'),
+  triggerUserChecks: () =>
+    request<{ message: string; result: any }>('/monitoring/trigger-user-checks', { method: 'POST' }),
 };
 
 export interface PriceChange {

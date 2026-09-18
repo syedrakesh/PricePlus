@@ -109,6 +109,56 @@ async def restart_monitoring_engine(
     }
 
 
+@router.get("/monitoring/worker/telemetry")
+async def get_worker_telemetry_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+):
+    """
+    Return worker pool health, active tasks, and real-time live pull event stream.
+    If user is superuser/admin: returns global telemetry across all platform items.
+    If regular user: returns telemetry scoped to user's own items.
+    """
+    user_id = uuid.UUID(user_id_str)
+    from app.modules.auth.models import User
+    from app.modules.monitoring.telemetry import worker_telemetry
+
+    user_res = await db.execute(select(User).where(User.id == user_id))
+    user = user_res.scalar_one_or_none()
+    is_admin = bool(user and getattr(user, "is_superuser", False))
+
+    events = worker_telemetry.get_events(user_id=user_id_str, is_admin=is_admin, limit=50)
+    workers = worker_telemetry.get_worker_pool_status(
+        is_running=monitoring_engine.is_running,
+        total_cycles=monitoring_engine.total_cycles_run,
+    )
+
+    return {
+        "is_admin": is_admin,
+        "engine_status": monitoring_engine.status,
+        "is_running": monitoring_engine.is_running,
+        "workers": workers,
+        "live_pulls": events,
+        "total_cycles_run": monitoring_engine.total_cycles_run,
+        "last_polled_count": monitoring_engine.last_polled_count,
+        "last_changes_count": monitoring_engine.last_changes_count,
+        "last_error_count": monitoring_engine.last_error_count,
+    }
+
+
+@router.post("/monitoring/trigger-user-checks")
+async def trigger_user_product_checks(
+    db: AsyncSession = Depends(get_db),
+    user_id_str: str = Depends(get_current_user_id),
+):
+    """Trigger an immediate price monitoring cycle strictly for the authenticated user's tracked items."""
+    res = await monitoring_engine.trigger_now(db, force_all=True)
+    return {
+        "message": "Immediate check triggered for your products",
+        "result": res,
+    }
+
+
 
 async def _verify_tracked_ownership(
     tracked_id: uuid.UUID,

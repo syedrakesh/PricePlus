@@ -154,6 +154,7 @@ async def _do_poll(
     max_d = u_settings.tracking_max_delay if u_settings else 0.5
     req_delay = random.uniform(min_d, max_d)
 
+    start_t = datetime.now(UTC)
     try:
         json_data = await fetch_product_json(
             store_url=store_url,
@@ -176,6 +177,8 @@ async def _do_poll(
             exc,
         )
 
+    latency_ms = int((datetime.now(UTC) - start_t).total_seconds() * 1000)
+
     # Build current snapshot data
     if extracted is not None:
         current = SnapshotData(
@@ -185,6 +188,18 @@ async def _do_poll(
         )
     else:
         current = SnapshotData(price=None, is_available=None)
+
+    from app.modules.monitoring.telemetry import worker_telemetry
+    worker_telemetry.record_event(
+        action="PULLED" if not error_message else "ERROR",
+        product_title=discovered.title or discovered.handle,
+        store_domain=parsed.netloc,
+        price=current.price,
+        status_code=http_status or (200 if not error_message else 500),
+        latency_ms=latency_ms,
+        user_id=str(tracked.user_id),
+        details=error_message or (f"Price: ${current.price}" if current.price is not None else "Fetched"),
+    )
 
     # Write the snapshot
     snapshot = ProductSnapshot(

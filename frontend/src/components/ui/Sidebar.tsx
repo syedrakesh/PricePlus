@@ -37,6 +37,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Speed & System',
     items: [
+      { href: '/system',             label: 'Engine Telemetry', icon: '⚙️' },
       { href: '/settings/discovery', label: 'Discovery Speed', icon: '🔍' },
       { href: '/settings/tracking',  label: 'Tracking Speed',  icon: '⚡' },
     ],

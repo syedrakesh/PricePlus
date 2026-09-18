@@ -225,6 +225,15 @@ async def _execute_pipeline(
         status = "completed"
 
     await _complete_run(db, run, status=status)
+    from app.modules.monitoring.telemetry import worker_telemetry
+    worker_telemetry.record_event(
+        action="DISCOVERED",
+        product_title=f"{total_created} new, {total_updated} updated items",
+        store_domain=store_host,
+        status_code=200 if status == "completed" else 206,
+        user_id=None,
+        details=f"Discovery run {status}: {len(parse_result.product_sitemap_urls)} sitemaps processed",
+    )
     logger.info(
         "Discovery run %s completed: status=%s created=%d updated=%d failed=%d",
         run.id,

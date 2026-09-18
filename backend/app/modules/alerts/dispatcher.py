@@ -143,6 +143,17 @@ async def _process_one_change(
             .values(last_triggered_at=datetime.now(UTC))
         )
 
+        from app.modules.monitoring.telemetry import worker_telemetry
+        worker_telemetry.record_event(
+            action="DISPATCHED",
+            product_title=discovered.title or discovered.handle,
+            store_domain=rule.channel,
+            price=None,
+            status_code=200 if delivered else 400,
+            user_id=str(rule.user_id),
+            details=f"Alert sent via [{rule.channel}]: {summary[:60]}",
+        )
+
         dispatched += 1
         logger.info(
             "Alert fired: rule=%s product=%s type=%s delivered=%s",
