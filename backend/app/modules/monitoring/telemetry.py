@@ -28,7 +28,17 @@ async def _persist_event_to_db(event: dict[str, Any]) -> None:
                 except (ValueError, TypeError):
                     user_uuid = None
 
+            log_id = None
+            if event.get("id"):
+                try:
+                    log_id = uuid.UUID(event["id"])
+                except (ValueError, TypeError):
+                    log_id = uuid.uuid4()
+            else:
+                log_id = uuid.uuid4()
+
             log_entry = WorkerTelemetryLog(
+                id=log_id,
                 action=event.get("action", "UNKNOWN"),
                 product_title=event.get("product_title"),
                 store_domain=event.get("store_domain"),
@@ -63,8 +73,9 @@ class WorkerTelemetryService:
         details: str | None = None,
     ) -> dict[str, Any]:
         """Record a live worker action into the telemetry ring buffer and DB log table."""
+        event_id = str(uuid.uuid4())
         event = {
-            "id": f"evt_{datetime.now(UTC).timestamp()}_{len(self._events_buffer)}",
+            "id": event_id,
             "timestamp": datetime.now(UTC).isoformat(),
             "action": action,
             "product_title": product_title or "Unknown Product",

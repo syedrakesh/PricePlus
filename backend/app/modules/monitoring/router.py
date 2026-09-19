@@ -131,18 +131,26 @@ async def get_worker_telemetry_endpoint(
 
     events = worker_telemetry.get_events(user_id=user_id_str, is_admin=is_admin, limit=50)
 
-    # Fallback to persistent DB logs if server recently restarted and ring buffer is empty
-    if len(events) < 5:
+    # Always backfill with persistent DB logs up to 50 items so historical events never vanish
+    if len(events) < 50:
+        existing_ids = {e["id"] for e in events}
+        existing_keys = {
+            (e["timestamp"][:19], e.get("product_title"), e.get("action"), e.get("store_domain"))
+            for e in events
+        }
         db_stmt = select(WorkerTelemetryLog)
         if not is_admin:
             db_stmt = db_stmt.where((WorkerTelemetryLog.user_id == user_id) | (WorkerTelemetryLog.user_id.is_(None)))
-        db_stmt = db_stmt.order_by(WorkerTelemetryLog.timestamp.desc()).limit(50)
+        db_stmt = db_stmt.order_by(WorkerTelemetryLog.timestamp.desc()).limit(100)
         db_res = await db.execute(db_stmt)
         db_logs = list(db_res.scalars().all())
-        if db_logs:
-            events = [
-                {
-                    "id": str(log.id),
+        for log in db_logs:
+            log_id = str(log.id)
+            log_ts = log.timestamp.isoformat()[:19]
+            sig = (log_ts, log.product_title or "Unknown Product", log.action, log.store_domain or "General")
+            if log_id not in existing_ids and sig not in existing_keys:
+                events.append({
+                    "id": log_id,
                     "timestamp": log.timestamp.isoformat(),
                     "action": log.action,
                     "product_title": log.product_title or "Unknown Product",
@@ -151,9 +159,13 @@ async def get_worker_telemetry_endpoint(
                     "status_code": log.status_code,
                     "latency_ms": log.latency_ms,
                     "details": log.details or "",
-                }
-                for log in db_logs
-            ]
+                })
+                existing_ids.add(log_id)
+                existing_keys.add(sig)
+                if len(events) >= 50:
+                    break
+
+        events.sort(key=lambda x: x["timestamp"], reverse=True)
 
     workers = worker_telemetry.get_worker_pool_status(
         is_running=monitoring_engine.is_running,

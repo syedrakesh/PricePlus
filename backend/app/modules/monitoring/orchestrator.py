@@ -82,7 +82,7 @@ async def run_monitoring_cycle(db: AsyncSession, force_all: bool = False) -> dic
 
     results = await asyncio.gather(
         *[
-            _poll_one_product(db, semaphore, tracked, discovered)
+            _poll_one_product(semaphore, tracked.id, discovered.id)
             for tracked, discovered in active_tracked
         ],
         return_exceptions=True,
@@ -99,8 +99,6 @@ async def run_monitoring_cycle(db: AsyncSession, force_all: bool = False) -> dic
             if result.get("error"):
                 errors += 1
 
-    await db.commit()
-
     logger.info(
         "Monitoring cycle complete: polled=%d changes=%d errors=%d",
         polled,
@@ -111,34 +109,49 @@ async def run_monitoring_cycle(db: AsyncSession, force_all: bool = False) -> dic
 
 
 async def _poll_one_product(
-    db: AsyncSession,
     semaphore: asyncio.Semaphore,
-    tracked: TrackedProduct,
-    discovered: DiscoveredProduct,
+    tracked_id: uuid.UUID,
+    discovered_id: uuid.UUID,
 ) -> dict:
     """
-    Poll a single tracked product, write snapshot, detect changes.
+    Poll a single tracked product in an isolated DB session, write snapshot, detect changes.
     Returns {'changed': bool, 'error': bool}.
     """
     async with semaphore:
-        try:
-            return await _do_poll(db, tracked, discovered)
-        except Exception as exc:
-            logger.exception("Polling failed with exception for %s: %s", discovered.handle, exc)
-            from urllib.parse import urlparse
-            parsed = urlparse(discovered.product_url or "")
-            from app.modules.monitoring.telemetry import worker_telemetry
-            worker_telemetry.record_event(
-                action="ERROR",
-                product_title=discovered.title or discovered.handle or "Unknown Product",
-                store_domain=parsed.netloc or "Store",
-                price=None,
-                status_code=500,
-                latency_ms=0,
-                user_id=str(tracked.user_id),
-                details=f"Uncaught Exception: {type(exc).__name__} — {str(exc)}",
+        from app.core.db import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(TrackedProduct, DiscoveredProduct)
+                .join(DiscoveredProduct, DiscoveredProduct.id == TrackedProduct.discovered_product_id)
+                .where(TrackedProduct.id == tracked_id)
             )
-            return {"changed": False, "error": True}
+            res = await db.execute(stmt)
+            row = res.one_or_none()
+            if not row:
+                return {"changed": False, "error": True}
+            tracked, discovered = row
+
+            try:
+                result = await _do_poll(db, tracked, discovered)
+                await db.commit()
+                return result
+            except Exception as exc:
+                await db.rollback()
+                logger.exception("Polling failed with exception for %s: %s", discovered.handle, exc)
+                from urllib.parse import urlparse
+                parsed = urlparse(discovered.product_url or "")
+                from app.modules.monitoring.telemetry import worker_telemetry
+                worker_telemetry.record_event(
+                    action="ERROR",
+                    product_title=discovered.title or discovered.handle or "Unknown Product",
+                    store_domain=parsed.netloc or "Store",
+                    price=None,
+                    status_code=500,
+                    latency_ms=0,
+                    user_id=str(tracked.user_id),
+                    details=f"Uncaught Exception: {type(exc).__name__} — {str(exc)}",
+                )
+                return {"changed": False, "error": True}
 
 
 async def _do_poll(
