@@ -121,7 +121,24 @@ async def _poll_one_product(
     Returns {'changed': bool, 'error': bool}.
     """
     async with semaphore:
-        return await _do_poll(db, tracked, discovered)
+        try:
+            return await _do_poll(db, tracked, discovered)
+        except Exception as exc:
+            logger.exception("Polling failed with exception for %s: %s", discovered.handle, exc)
+            from urllib.parse import urlparse
+            parsed = urlparse(discovered.product_url or "")
+            from app.modules.monitoring.telemetry import worker_telemetry
+            worker_telemetry.record_event(
+                action="ERROR",
+                product_title=discovered.title or discovered.handle or "Unknown Product",
+                store_domain=parsed.netloc or "Store",
+                price=None,
+                status_code=500,
+                latency_ms=0,
+                user_id=str(tracked.user_id),
+                details=f"Uncaught Exception: {type(exc).__name__} — {str(exc)}",
+            )
+            return {"changed": False, "error": True}
 
 
 async def _do_poll(
@@ -134,8 +151,8 @@ async def _do_poll(
 
     # Determine store URL from the product URL
     from urllib.parse import urlparse
-    parsed = urlparse(discovered.product_url)
-    store_url = f"{parsed.scheme}://{parsed.netloc}"
+    parsed = urlparse(discovered.product_url or "")
+    store_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else discovered.product_url
 
     # Fetch product data
     json_data = None
@@ -164,6 +181,10 @@ async def _do_poll(
         if json_data is not None:
             extracted = extract_product_data(json_data)
             http_status = 200
+            if extracted is None:
+                error_message = "Product data parser returned None"
+            elif extracted.price is None:
+                error_message = "Price extraction returned null (HTML structure changed or price selector missing)"
         else:
             http_status = 404
             error_message = "Product JSON returned None (404 or unavailable)"
@@ -176,6 +197,10 @@ async def _do_poll(
             tracked.id,
             exc,
         )
+    except Exception as exc:
+        http_status = 500
+        error_message = f"Fetch exception: {type(exc).__name__} — {str(exc)}"
+        logger.exception("Unexpected fetch exception for %s: %s", discovered.handle, exc)
 
     latency_ms = int((datetime.now(UTC) - start_t).total_seconds() * 1000)
 
