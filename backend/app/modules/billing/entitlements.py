@@ -130,6 +130,14 @@ class EntitlementService:
         return plan
 
     @classmethod
+    async def get_user_poll_interval_mins(cls, user_id: uuid.UUID, db: AsyncSession) -> int:
+        """Return the effective polling interval in minutes for a user (Superadmin = 1m, or Plan poll_interval_mins)."""
+        if await _is_superuser_or_admin(user_id, db):
+            return 1
+        plan = await cls.get_user_active_plan(user_id, db)
+        return plan.poll_interval_mins if plan else 60
+
+    @classmethod
     async def sync_user_plan_entitlements(
         cls, user_id: uuid.UUID, db: AsyncSession
     ) -> None:

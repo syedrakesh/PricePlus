@@ -220,8 +220,7 @@ async def _do_poll(
     from datetime import timedelta
     from app.modules.billing.entitlements import EntitlementService
 
-    user_plan = await EntitlementService.get_user_active_plan(tracked.user_id, db)
-    interval_mins = user_plan.poll_interval_mins if user_plan else 60
+    interval_mins = await EntitlementService.get_user_poll_interval_mins(tracked.user_id, db)
 
     tracked.next_check_at = now + timedelta(minutes=interval_mins)
     tracked.tracking_interval_minutes = None
