@@ -267,9 +267,9 @@ async def _do_poll(
     # Determine baseline previous price (from prev snapshot or discovered.current_price)
     previous_price: float | None = None
     if prev_snapshot is not None and prev_snapshot.price is not None:
-        previous_price = prev_snapshot.price
+        previous_price = float(prev_snapshot.price)
     elif discovered.current_price is not None:
-        previous_price = discovered.current_price
+        previous_price = float(discovered.current_price)
 
     if previous_price is not None and error_message is None:
         previous = SnapshotData(

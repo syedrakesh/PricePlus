@@ -26,6 +26,10 @@ class SnapshotData:
     is_available: bool | None
     currency: str = "USD"
 
+    def __post_init__(self) -> None:
+        if self.price is not None:
+            self.price = float(self.price)
+
 
 @dataclass
 class PriceChangeEvent:
@@ -39,6 +43,14 @@ class PriceChangeEvent:
     currency: str
     pct_change: float | None
     """Pre-computed percentage change (positive = increase, negative = decrease)."""
+
+    def __post_init__(self) -> None:
+        if self.old_price is not None:
+            self.old_price = float(self.old_price)
+        if self.new_price is not None:
+            self.new_price = float(self.new_price)
+        if self.pct_change is not None:
+            self.pct_change = float(self.pct_change)
 
 
 def detect_price_change(

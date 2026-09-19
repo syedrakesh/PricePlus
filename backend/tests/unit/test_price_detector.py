@@ -139,3 +139,17 @@ class TestPctChangeEdgeCases:
         event = detect_price_change(snap(100.0000), snap(100.0001))
         assert event is not None
         assert event.change_type == "price_increase"
+
+    def test_decimal_and_float_comparison(self):
+        """Ensure Decimal (from DB column) and float (from JSON) do not raise TypeError."""
+        from decimal import Decimal
+        prev_snap = SnapshotData(price=Decimal("61.95"), is_available=True)
+        curr_snap = SnapshotData(price=61.95, is_available=True)
+        assert detect_price_change(prev_snap, curr_snap) is None
+
+        curr_increase = SnapshotData(price=75.00, is_available=True)
+        event = detect_price_change(prev_snap, curr_increase)
+        assert event is not None
+        assert event.change_type == "price_increase"
+        assert event.old_price == pytest.approx(61.95)
+        assert event.new_price == pytest.approx(75.00)
