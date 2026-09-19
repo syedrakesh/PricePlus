@@ -318,3 +318,229 @@
   font-size: var(--text-xs);
 }
 
+.detailsCellError {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-danger);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.detailsCellError:hover {
+  text-decoration: underline;
+}
+
+.statClickable {
+  cursor: pointer;
+  transition: transform var(--transition);
+}
+
+.statClickable:hover {
+  transform: translateY(-2px);
+}
+
+.errorDiagnosticCard {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.errorDiagnosticHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.errorDiagnosticTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-danger);
+}
+
+.errorList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.errorItemRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.errorItemTitle {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.errorItemMsg {
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+}
+
+.errorDetailsBtn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--color-danger);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.errorDetailsBtn:hover {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.modalContent {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modalTitle {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.modalClose {
+  background: transparent;
+  border: none;
+  font-size: var(--text-lg);
+  color: var(--color-text-3);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.modalClose:hover {
+  color: var(--color-text);
+  background: var(--color-surface-3);
+}
+
+.modalBody {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.modalMetaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  background: var(--color-surface-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+}
+
+.modalMetaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.modalMetaLabel {
+  color: var(--color-text-3);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.modalMetaVal {
+  color: var(--color-text);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.modalCodeBlock {
+  background: #0d1117;
+  color: #f0f6fc;
+  border: 1px solid var(--color-border);
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.suggestionBox {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--color-text);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.suggestionBox h5 {
+  font-weight: 700;
+  color: var(--color-accent);
+  margin-bottom: 4px;
+}
+
+
+

@@ -1,18 +1,19 @@
 import styles from './Card.module.css';
-import { ReactNode } from 'react';
+import { ReactNode, HTMLAttributes } from 'react';
 
-interface CardProps {
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   className?: string;
   glow?: boolean;
   onClick?: () => void;
 }
 
-export function Card({ children, className = '', glow, onClick }: CardProps) {
+export function Card({ children, className = '', glow, onClick, ...rest }: CardProps) {
   return (
     <div
       className={[styles.card, glow ? styles.glow : '', onClick ? styles.clickable : '', className].join(' ')}
       onClick={onClick}
+      {...rest}
     >
       {children}
     </div>

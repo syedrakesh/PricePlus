@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import useSWR from 'swr';
-import { monitoringApi } from '@/lib/api';
+import { monitoringApi, LivePullEvent } from '@/lib/api';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,7 @@ export default function OperationsSystemPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [lastFetchTime, setLastFetchTime] = useState<number>(Date.now());
   const [now, setNow] = useState<number>(Date.now());
+  const [selectedErrorEvent, setSelectedErrorEvent] = useState<LivePullEvent | null>(null);
 
   // Poll telemetry endpoint every 2000ms for live real-time stream
   const { data, isLoading, error, mutate } = useSWR(
@@ -112,10 +113,34 @@ export default function OperationsSystemPage() {
     return <span style={{ color: 'var(--color-danger)', fontWeight: 600, fontSize: 'var(--text-xs)' }}>{code} Error</span>;
   };
 
+  const getTroubleshootingAdvice = (evt: LivePullEvent) => {
+    const detailsLower = (evt.details || '').toLowerCase();
+    const code = evt.status_code;
+
+    if (code === 404 || detailsLower.includes('404')) {
+      return 'The target product page returned 404 Not Found. The product URL may have changed or been deleted from the merchant store.';
+    }
+    if (code === 403 || detailsLower.includes('403') || detailsLower.includes('cloudflare') || detailsLower.includes('captcha')) {
+      return 'HTTP 403 Forbidden / Anti-Bot protection triggered. The merchant site is blocking direct HTTP requests. Consider enabling dynamic headless rendering or IP proxy rotation.';
+    }
+    if (detailsLower.includes('timeout') || detailsLower.includes('timed out') || detailsLower.includes('connect')) {
+      return 'Connection timed out or store host unreachable. Check target domain accessibility and network DNS resolution.';
+    }
+    if (detailsLower.includes('selector') || detailsLower.includes('parse') || detailsLower.includes('none')) {
+      return 'Price extraction returned null or selector matched zero elements. The store template or CSS markup may have been updated.';
+    }
+    return 'Review system logs or click "⚡ Poll My Tracked Items Now" / "⚡ Force Global Poll" to retry fetching this item.';
+  };
+
   const rawEvents = data?.live_pulls || [];
+  const errorEvents = rawEvents.filter(evt => evt.action === 'ERROR' || evt.status_code >= 400);
 
   const filteredEvents = rawEvents.filter(evt => {
-    const matchesAction = actionFilter === 'ALL' || evt.action === actionFilter;
+    const matchesAction = actionFilter === 'ALL'
+      ? true
+      : actionFilter === 'ERROR'
+      ? (evt.action === 'ERROR' || evt.status_code >= 400)
+      : evt.action === actionFilter;
     const matchesQuery = !searchQuery ||
       evt.product_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       evt.store_domain.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -228,20 +253,66 @@ export default function OperationsSystemPage() {
           </CardBody>
         </Card>
 
-        <Card>
+        <Card
+          className={styles.statClickable}
+          onClick={() => {
+            setActionFilter('ERROR');
+            const el = document.getElementById('live-stream-feed');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          }}
+          title="Click to view error log stream"
+        >
           <CardBody>
             <div className={styles.stat}>
               <span className={styles.statIcon}>⚠️</span>
               <div>
-                <div className={styles.statValue} style={{ color: data?.last_error_count ? 'var(--color-danger)' : 'var(--color-text-2)' }}>
-                  {data?.last_error_count ?? 0}
+                <div className={styles.statValue} style={{ color: (data?.last_error_count || errorEvents.length) ? 'var(--color-danger)' : 'var(--color-text-2)' }}>
+                  {data?.last_error_count ?? errorEvents.length}
                 </div>
-                <div className={styles.statLabel}>Error Count</div>
+                <div className={styles.statLabel}>Error Count (Click to Filter)</div>
               </div>
             </div>
           </CardBody>
         </Card>
       </div>
+
+      {/* Error Diagnostics Card (if error events exist) */}
+      {errorEvents.length > 0 && (
+        <div className={styles.errorDiagnosticCard}>
+          <div className={styles.errorDiagnosticHeader}>
+            <div className={styles.errorDiagnosticTitle}>
+              <span>⚠️</span>
+              <span>Recent Engine Error Diagnostics ({errorEvents.length} Recent Failures)</span>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setActionFilter('ERROR')}
+            >
+              Filter Stream to Errors
+            </Button>
+          </div>
+          <div className={styles.errorList}>
+            {errorEvents.slice(0, 3).map((evt) => (
+              <div key={evt.id} className={styles.errorItemRow}>
+                <div>
+                  <span className={styles.errorItemTitle}>{evt.store_domain}</span> —{' '}
+                  <span>{evt.product_title}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                  <span className={styles.errorItemMsg}>{evt.details}</span>
+                  <button
+                    className={styles.errorDetailsBtn}
+                    onClick={() => setSelectedErrorEvent(evt)}
+                  >
+                    Inspect Error
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Interactive Visual Telemetry Charts & Analytics */}
       <Card>
@@ -286,7 +357,7 @@ export default function OperationsSystemPage() {
       </Card>
 
       {/* Live Pull Stream Feed */}
-      <Card>
+      <Card id="live-stream-feed">
         <CardHeader>
           <div className={styles.streamHeader}>
             <div className={styles.streamHeaderLeft}>
@@ -308,7 +379,7 @@ export default function OperationsSystemPage() {
                 onClick={() => setActionFilter(act)}
                 className={`${styles.filterPill} ${actionFilter === act ? styles.filterPillActive : ''}`}
               >
-                {act === 'ALL' ? '🌐 All Events' : act}
+                {act === 'ALL' ? '🌐 All Events' : act === 'ERROR' ? '⚠️ Errors Only' : act}
               </button>
             ))}
           </div>
@@ -343,37 +414,131 @@ export default function OperationsSystemPage() {
                   <th>Price</th>
                   <th>HTTP Status</th>
                   <th>Latency</th>
-                  <th>Details</th>
+                  <th>Details & Diagnostics</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredEvents.map((evt) => (
-                  <tr key={evt.id}>
-                    <td className={styles.timeCell}>
-                      {new Date(evt.timestamp).toLocaleTimeString()}
-                    </td>
-                    <td>{actionBadge(evt.action)}</td>
-                    <td className={styles.titleCell} title={evt.product_title}>
-                      {evt.product_title}
-                    </td>
-                    <td><code className={styles.codeDomain}>{evt.store_domain}</code></td>
-                    <td className={styles.priceCell}>
-                      {evt.price !== null && evt.price !== undefined ? `$${evt.price.toFixed(2)}` : '—'}
-                    </td>
-                    <td>{statusBadge(evt.status_code)}</td>
-                    <td className={styles.latencyCell}>
-                      {evt.latency_ms > 0 ? `${evt.latency_ms}ms` : '—'}
-                    </td>
-                    <td className={styles.detailsCell} title={evt.details}>
-                      {evt.details}
-                    </td>
-                  </tr>
-                ))}
+                {filteredEvents.map((evt) => {
+                  const isErr = evt.action === 'ERROR' || evt.status_code >= 400;
+                  return (
+                    <tr key={evt.id}>
+                      <td className={styles.timeCell}>
+                        {new Date(evt.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td>{actionBadge(evt.action)}</td>
+                      <td className={styles.titleCell} title={evt.product_title}>
+                        {evt.product_title}
+                      </td>
+                      <td><code className={styles.codeDomain}>{evt.store_domain}</code></td>
+                      <td className={styles.priceCell}>
+                        {evt.price !== null && evt.price !== undefined ? `$${evt.price.toFixed(2)}` : '—'}
+                      </td>
+                      <td>{statusBadge(evt.status_code)}</td>
+                      <td className={styles.latencyCell}>
+                        {evt.latency_ms > 0 ? `${evt.latency_ms}ms` : '—'}
+                      </td>
+                      <td>
+                        {isErr ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span
+                              className={styles.detailsCellError}
+                              title={evt.details}
+                              onClick={() => setSelectedErrorEvent(evt)}
+                            >
+                              {evt.details}
+                            </span>
+                            <button
+                              className={styles.errorDetailsBtn}
+                              onClick={() => setSelectedErrorEvent(evt)}
+                            >
+                              Inspect
+                            </button>
+                          </div>
+                        ) : (
+                          <span className={styles.detailsCell} title={evt.details}>
+                            {evt.details}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
+
+      {/* Error Details Modal */}
+      {selectedErrorEvent && (
+        <div className={styles.modalOverlay} onClick={() => setSelectedErrorEvent(null)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <div className={styles.modalTitle}>
+                <span>⚠️</span>
+                <span>Telemetry Error Inspection Details</span>
+              </div>
+              <button
+                className={styles.modalClose}
+                onClick={() => setSelectedErrorEvent(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              <div className={styles.modalMetaGrid}>
+                <div className={styles.modalMetaItem}>
+                  <span className={styles.modalMetaLabel}>Timestamp</span>
+                  <span className={styles.modalMetaVal}>
+                    {new Date(selectedErrorEvent.timestamp).toLocaleString()}
+                  </span>
+                </div>
+                <div className={styles.modalMetaItem}>
+                  <span className={styles.modalMetaLabel}>Action & Status</span>
+                  <span className={styles.modalMetaVal}>
+                    {selectedErrorEvent.action} (HTTP {selectedErrorEvent.status_code})
+                  </span>
+                </div>
+                <div className={styles.modalMetaItem}>
+                  <span className={styles.modalMetaLabel}>Store Domain</span>
+                  <span className={styles.modalMetaVal}>{selectedErrorEvent.store_domain}</span>
+                </div>
+                <div className={styles.modalMetaItem}>
+                  <span className={styles.modalMetaLabel}>Product Target</span>
+                  <span className={styles.modalMetaVal}>{selectedErrorEvent.product_title}</span>
+                </div>
+                <div className={styles.modalMetaItem}>
+                  <span className={styles.modalMetaLabel}>Request Latency</span>
+                  <span className={styles.modalMetaVal}>{selectedErrorEvent.latency_ms} ms</span>
+                </div>
+                <div className={styles.modalMetaItem}>
+                  <span className={styles.modalMetaLabel}>Event ID</span>
+                  <span className={styles.modalMetaVal}>{selectedErrorEvent.id}</span>
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-text-2)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  Full Error Output & Details
+                </h4>
+                <pre className={styles.modalCodeBlock}>{selectedErrorEvent.details}</pre>
+              </div>
+
+              <div className={styles.suggestionBox}>
+                <h5>💡 Suggested Troubleshooting Resolution</h5>
+                <p>{getTroubleshootingAdvice(selectedErrorEvent)}</p>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+                <Button variant="secondary" onClick={() => setSelectedErrorEvent(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
