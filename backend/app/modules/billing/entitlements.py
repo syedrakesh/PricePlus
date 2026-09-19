@@ -131,11 +131,9 @@ class EntitlementService:
 
     @classmethod
     async def get_user_poll_interval_mins(cls, user_id: uuid.UUID, db: AsyncSession) -> int:
-        """Return the effective polling interval in minutes for a user (Superadmin = 1m, or Plan poll_interval_mins)."""
-        if await _is_superuser_or_admin(user_id, db):
-            return 1
+        """Return the effective polling interval in minutes for a user based on their active subscription plan."""
         plan = await cls.get_user_active_plan(user_id, db)
-        return plan.poll_interval_mins if plan else 60
+        return plan.poll_interval_mins if plan and plan.poll_interval_mins else 60
 
     @classmethod
     async def sync_user_plan_entitlements(
@@ -270,6 +268,8 @@ class EntitlementService:
 
         # SuperAdmin / System Admin bypass check -> Return Unlimited Access!
         if await _is_superuser_or_admin(user_id, db):
+            plan = await cls.get_user_active_plan(user_id, db)
+            poll_interval = plan.poll_interval_mins if plan else 60
             return UserUsageSummary(
                 plan_id="admin-unlimited",
                 plan_name="System Admin (Unlimited)",
@@ -281,7 +281,7 @@ class EntitlementService:
                 max_tracked_products=999999,
                 current_tracked_products=current_tracked,
                 paused_tracked_products=0,
-                min_poll_interval_mins=1,
+                min_poll_interval_mins=poll_interval,
                 max_priority_products=999999,
                 current_priority_products=current_priority,
                 is_over_limit=False,
