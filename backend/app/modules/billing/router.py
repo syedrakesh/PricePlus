@@ -763,6 +763,15 @@ async def admin_update_plan(
         plan.features = data.features
 
     await db.commit()
+
+    # Immediately sync entitlements & worker poll schedule for all users subscribed to this plan
+    sub_res = await db.execute(
+        select(Subscription.user_id).where(Subscription.plan_id == plan.id).distinct()
+    )
+    user_ids = list(sub_res.scalars().all())
+    for u_id in user_ids:
+        await EntitlementService.sync_user_plan_entitlements(u_id, db)
+
     await db.refresh(plan)
     return PlanResponse.from_orm_model(plan)
 

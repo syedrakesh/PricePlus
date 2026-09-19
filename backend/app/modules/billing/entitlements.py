@@ -12,6 +12,7 @@ Note: Superadmin & System Admin users automatically bypass all customer plan quo
 
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
@@ -199,6 +200,8 @@ class EntitlementService:
                 if active_prod_count < max_products:
                     prod.is_active = True
                     prod.status = "active"
+                    # Reset next_check_at to now() so background worker engine immediately polls items using the new plan interval
+                    prod.next_check_at = datetime.now(UTC)
                     active_prod_count += 1
                 else:
                     prod.is_active = False
